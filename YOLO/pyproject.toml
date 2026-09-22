@@ -4,13 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "rianhickey", email = "rch27@tamu.edu" }
+    { name = "rian", email = "rch27@tamu.edu" }
 ]
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.14.0",
-    "torchvision>=0.29.0",
-    "ultralytics>=8.4.123",
+    "ultralytics>=8.4.159",
 ]
 
 [project.scripts]
