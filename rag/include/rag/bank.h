@@ -7,7 +7,7 @@
 
 namespace rag {
 
-// Dimensions fixed by the TinyLlama and CLIP representations used in the paper.
+// Bank dimensions
 constexpr std::uint32_t kTextDim = 2048;
 constexpr std::uint32_t kVisualTokens = 101;
 constexpr std::uint32_t kVisualDim = 1024;
@@ -19,7 +19,7 @@ struct Payload {
   std::vector<float> visual_features;
 };
 
-// Loads search keys eagerly and reads the winning entry's larger payload on demand.
+// Bank access
 class Bank {
  public:
   explicit Bank(const std::string& path);

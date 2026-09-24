@@ -6,22 +6,24 @@
 
 namespace rag {
 
+// Search result
 struct Match {
   bool accepted = false;
   std::uint32_t id = 0;
   float score = -1.0f;
 };
 
-// Shared validation and normalization used by both search backends.
+// Shared preprocessing
 std::vector<float> normalize_query(const std::vector<float>& query);
 
+// CPU backend
 Match search_cpu(
     const Bank& bank,
     const std::vector<float>& query,
     float threshold = 0.7f);
 
 #ifdef RAG_HAS_CUDA
-// Owns persistent GPU buffers so bank keys are uploaded only once.
+// CUDA backend
 class CudaSearcher {
  public:
   explicit CudaSearcher(const Bank& bank);
