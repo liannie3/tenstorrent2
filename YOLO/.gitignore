@@ -1,0 +1,7 @@
+
+#ignore's test and result images
+test_images/*
+result_images/*
+
+#ignore environment files
+myenv/
