@@ -1,0 +1,40 @@
+
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (7.39s)
+Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
++-----------------------------------------------------------------------------------------------+
+|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
++===============================================================================================+
+| 1   TorchScript   ✅         12.4        0.6106                14.25                    70.16 |
++-----------------------------------------------------------------------------------------------+
+
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (96.78s)
+Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
++--------------------------------------------------------------------------------------------+
+|     Format     Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
++============================================================================================+
+| 1   TensorRT   ✅         164.3       0.6081                12.72                    78.62 |
++--------------------------------------------------------------------------------------------+
+
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (2.35s)
+Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
++-----------------------------------------------------------------------------------------------+
+|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
++===============================================================================================+
+| 1   TorchScript   ✅         12.4        0.6106                17.41                    57.43 |
++-----------------------------------------------------------------------------------------------+
+
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (86.00s)
+Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
++--------------------------------------------------------------------------------------------+
+|     Format     Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
++============================================================================================+
+| 1   TensorRT   ✅         164.4       0.6107                23.34                    42.84 |
++--------------------------------------------------------------------------------------------+
+
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (2.52s)
+Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
++-----------------------------------------------------------------------------------------------+
+|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
++===============================================================================================+
+| 1   TorchScript   ✅         12.4        0.6106                29.61                    33.77 |
++-----------------------------------------------------------------------------------------------+
