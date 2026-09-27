@@ -1,4 +1,3 @@
-
 #ignore's test and result images
 test_images/*
 result_images/*
@@ -11,4 +10,9 @@ myenv/
 *.pt
 !**/best.pt 
 
+
+#ignore exported models
+**.engine
+**.onnx
+**.torchscript
 
