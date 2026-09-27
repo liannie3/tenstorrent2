@@ -5,3 +5,7 @@ result_images/*
 
 #ignore environment files
 myenv/
+
+#ignore untrained pytorch models
+*.pt
+!**/best.pt 
