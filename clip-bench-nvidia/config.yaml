@@ -1,0 +1,33 @@
+# ---------------- Model ----------------
+model:
+  name: openai/clip-vit-large-patch14-336   # Hugging Face checkpoint (frozen)
+  layer_index: -2          # hidden layer fed to projector (LLaVA-1.5 style)          !!! Check with Saby !!!
+  keep_cls: false          # false = 576 tokens, true = 577.                          !!! Check with Saby !!!
+  projector_weights: null  # null = random init until trained weights are available   !!! Check with Saby !!!
+
+# ---------------- Run ----------------
+run:
+  device: cuda             # cuda on Jetson, cpu for testing on your laptop
+  precision: fp16          
+  batch_size: 1
+  warmup_iters: 20        
+  timed_iters: 200
+  seed: 0
+
+# ---------------- Data ----------------
+data:
+  image_dir: data/images
+  image_size: 336
+
+# ---------------- Correctness ----------------
+parity:
+  golden_path: golden/vitl14_336_fp32_cpu.npz
+  threshold: 0.999         # min cosine similarity vs golden to accept a run
+
+# ---------------- Hardware ----------------
+hardware:
+  tegrastats_interval_ms: 100
+
+# ---------------- Output ----------------
+output:
+  results_dir: results
