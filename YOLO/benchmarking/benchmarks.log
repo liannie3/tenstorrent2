@@ -1,40 +1,32 @@
 
-Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (7.39s)
-Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
-+-----------------------------------------------------------------------------------------------+
-|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
-+===============================================================================================+
-| 1   TorchScript   ✅         12.4        0.6106                14.25                    70.16 |
-+-----------------------------------------------------------------------------------------------+
-
-Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (96.78s)
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (135.02s)
 Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
 +--------------------------------------------------------------------------------------------+
 |     Format     Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
 +============================================================================================+
-| 1   TensorRT   ✅         164.3       0.6081                12.72                    78.62 |
+| 1   TensorRT   ✅         86.2        0.6083                12.81                    78.04 |
 +--------------------------------------------------------------------------------------------+
 
-Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (2.35s)
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (7.91s)
 Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
 +-----------------------------------------------------------------------------------------------+
 |     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
 +===============================================================================================+
-| 1   TorchScript   ✅         12.4        0.6106                17.41                    57.43 |
+| 1   TorchScript   ✅         12.4        0.6106                13.7                     72.97 |
 +-----------------------------------------------------------------------------------------------+
 
-Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (86.00s)
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (4.38s)
 Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
-+--------------------------------------------------------------------------------------------+
-|     Format     Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
-+============================================================================================+
-| 1   TensorRT   ✅         164.4       0.6107                23.34                    42.84 |
-+--------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------+
+|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS    |
++================================================================================================+
+| 1   TorchScript   ✅         12.4        0.6106                6.73                     148.57 |
++------------------------------------------------------------------------------------------------+
 
-Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (2.52s)
+Benchmarks complete for yolov8n.pt on coco8.yaml at imgsz=640 (4.35s)
 Benchmarks legend:  - ✅ Success  - ❎ Export passed but validation failed  - ❌️ Export failed
-+-----------------------------------------------------------------------------------------------+
-|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS   |
-+===============================================================================================+
-| 1   TorchScript   ✅         12.4        0.6106                29.61                    33.77 |
-+-----------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------+
+|     Format        Status❔   Size (MB)   metrics/mAP50-95(B)   Inference time (ms/im)   FPS    |
++================================================================================================+
+| 1   TorchScript   ✅         12.4        0.6106                7.11                     140.69 |
++------------------------------------------------------------------------------------------------+
