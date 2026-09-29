@@ -16,5 +16,9 @@ def test_data_image_dir_exists(config):
 def test_data_image_size_matches_model(config):
     assert config['data']['image_size'] == 336, f"Image size does not match model requirement: 336"
 
+def main():
+    return pytest.main([__file__, "-v"])
+ 
+ 
 if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-v"]))
+    raise SystemExit(main())

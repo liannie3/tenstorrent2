@@ -7,8 +7,8 @@ model:
 
 # ---------------- Run ----------------
 run:
-  device: cuda             # cuda on Jetson, cpu for testing on your laptop
-  precision: fp16          
+  device: auto             # cuda on Jetson, cpu on other platforms
+  precision: auto          
   batch_size: 1
   warmup_iters: 20        
   timed_iters: 200
