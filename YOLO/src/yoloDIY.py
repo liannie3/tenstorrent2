@@ -16,6 +16,23 @@ from ultralytics.utils.ops import non_max_suppression, scale_boxes
 def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
 
     #PRE-PROCESS STEP A: pre-transform input img before inference
+    
+    same_shapes = len({x.shape for x in im}) == 1 #determine if tensors are of same dimension/size
+    letterbox = LetterBox( new_shape = (640,640), auto = same_shapes,  stride = 32 ) #stride logic might need to be addressed
+    resized_imgs = [letterbox(image = x) for x in im] #resize each image passed in the current batch
+
+    #PRE-PROCESS STEP B: batch stacking
+
+    if len(resized_imgs == 1):
+        im = torch.from_numpy(im[0]).unsqueeze(0)
+    else:
+        im = torch.from_numpy(numpy.stack(im))
+
+    #PRE-PROCESS STEP C: batch transfer to gpu and tensor preparation
+    
+        
+
+    
 
 def inference_stage():
 

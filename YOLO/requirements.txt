@@ -7,7 +7,6 @@ blinker==1.9.0
 certifi==2026.1.4
 chardet==5.2.0
 click==8.1.8
-command-not-found==0.3
 configobj==5.0.9
 constantly==23.10.4
 cryptography==46.0.5
