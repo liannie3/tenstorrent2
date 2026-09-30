@@ -51,6 +51,7 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
 
 
 #arg of model, and feature map tensor im
+#Based on _predict_once method from ultralytics/nn/tasks.py 
 # NOTE: i think just iterates through the different layers present underneath the inference model
 #       if further granularity is requested by saby we can maybe pinpoint which layer is associated with
 #       which submodel? Similarly to how we identified spatial pooling to be the 9th layer
@@ -62,15 +63,12 @@ def inference_stage(model, im):
     y[] #store feature map tensors from earlier layers for future use
     
     #INFERENCE STEP B: BACKBONE extract features from input at multiple resolutions
-    #
 
     #C2F (CSP (Constraint Satisfaction Problem) Bottleneck with 2 convolutions, faster)
-    #Based on _predict_once method from ultralytics/nn/tasks.py which evokes
-    #c2f class' initializer function from ultralytics/nn/modules/block.py 
-    
-    for m in model.model[: backbone_boundary+1]: #NOTE loops through each layer interior to yolov8
+     
+    for m in model.model[: backbone_boundary+1]: #NOTE: loops through each layer interior to yolov8
                                                  #until reaching the backbone stage's boundary
-        #NOTE tensor feature map shouldn't initially originate from  -1
+        #NOTE: tensor feature map shouldn't initially originate from  -1
         if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
             if(isinstance(m.f,int) #if from is a single int not an int list
                 im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
@@ -95,9 +93,9 @@ def inference_stage(model, im):
     #INFERENCE STEP D: NECK fuse features across scales so both large and small objects have context
     #                  occurs in layers 10-21 of model
     
-    for m in model.model[backbone_boundary+1:neck_boundary+1]: #NOTE loops through each layer interior to yolov8
-                                                 #until reaching the backbone stage's boundary
-        #NOTE tensor feature map shouldn't initially originate from  -1
+    for m in model.model[backbone_boundary+1:neck_boundary+1]: #NOTE: loops through each layer interior to yolov8
+                                                               #until reaching the backbone stage's boundary
+        #NOTE: tensor feature map shouldn't initially originate from  -1
         if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
             if(isinstance(m.f,int) #if from is a single int not an int list
                 im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
@@ -118,9 +116,9 @@ def inference_stage(model, im):
 
     #INFERENCE STEP E: HEAD predict bounding boxes and class scores from fused features
     #                  occurs in layer 22
-    for m in model.model[neck_boundary+1:]: #NOTE loops through each layer interior to yolov8
-                                                 #until reaching the backbone stage's boundary
-        #NOTE tensor feature map shouldn't initially originate from  -1
+    for m in model.model[neck_boundary+1:]: #NOTE: loops through each layer interior to yolov8
+                                            #until reaching the backbone stage's boundary
+        #NOTE: tensor feature map shouldn't initially originate from  -1
         if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
             if(isinstance(m.f,int) #if from is a single int not an int list
                 im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
