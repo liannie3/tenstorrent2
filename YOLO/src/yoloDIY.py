@@ -21,21 +21,123 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
     letterbox = LetterBox( new_shape = (640,640), auto = same_shapes,  stride = 32 ) #stride logic might need to be addressed
     resized_imgs = [letterbox(image = x) for x in im] #resize each image passed in the current batch
 
-    #PRE-PROCESS STEP B: batch stacking
+    #PRE-PROCESS STEP B: batch numpy stacking
 
     if len(resized_imgs == 1):
-        im = torch.from_numpy(im[0]).unsqueeze(0)
+        im = torch.from_numpy(resized_imgs[0]).unsqueeze(0)
     else:
-        im = torch.from_numpy(numpy.stack(im))
+        im = torch.from_numpy(numpy.stack(resized_imgs))
 
-    #PRE-PROCESS STEP C: batch transfer to gpu and tensor preparation
+    #PRE-PROCESS STEP C: host to memory transfer batch transfer to gpu
+
+    im = im.to(device) #tranfer tensors to gpu
+    torch.cuda.synchronize() #wait for transfer to gpu
+
+    #PRE-PROCESS STEP D: adjust and normalize tensor layout (GPU)
+
+    im = im.permute(0, 3, 1, 2) #transfer from torch standard BHWC (batch, height, width, channels)
+                                #to ultralytics standard BCHW (batch, channels, height, width) tensor dimension representation
+    if im.shape[1] == 3:
+        im = im.flip(1) # BGR to RGB if there are three channels
+    im = im.contiguous  #allocate a new contiguous (i.e. uninterrupted) block of memory and copy data into it
+    if fp16:  
+        im = im.half() #if fp16 (16 bit float), convert image pixels tensor from unint8 to fp16
+    else:
+        im = im.float()) #if not fp16 convert image pixels tensor from uint8 to fp32 (32 bit float)
+    im = im.div_(255) #normalize tensor pixels from [0.0 - 255.0] -> [0.0 - 1.0]
+    torch.cuda.synchronize() #wait for cuda kernels to finish loading
     
-        
+    return im #return img tensor after pre processing is applied to it
 
+
+#arg of model, and feature map tensor im
+# NOTE: i think just iterates through the different layers present underneath the inference model
+#       if further granularity is requested by saby we can maybe pinpoint which layer is associated with
+#       which submodel? Similarly to how we identified spatial pooling to be the 9th layer
+def inference_stage(model, im):
+
+    #boundary layer indicies from ultralytics/cfg/models/v8/yoloe-v8.yaml
+    backbone_boundary = 9 #indicates backbone layers are 0-9 
+    neck_boundary = 21 #indicates neck layers are 10-21. NOTE head follows neck
+    y[] #store feature map tensors from earlier layers for future use
     
+    #INFERENCE STEP B: BACKBONE extract features from input at multiple resolutions
+    #
 
-def inference_stage():
+    #C2F (CSP (Constraint Satisfaction Problem) Bottleneck with 2 convolutions, faster)
+    #Based on _predict_once method from ultralytics/nn/tasks.py which evokes
+    #c2f class' initializer function from ultralytics/nn/modules/block.py 
+    
+    for m in model.model[: backbone_boundary+1]: #NOTE loops through each layer interior to yolov8
+                                                 #until reaching the backbone stage's boundary
+        #NOTE tensor feature map shouldn't initially originate from  -1
+        if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
+            if(isinstance(m.f,int) #if from is a single int not an int list
+                im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
+            else:
+                inputs = [] #create list to hold tensors c1 and c2
+                for j in m.f: #loop through all layers input came from
+                    if j == -1: 
+                        inputs.append(im) #tensor from previous layer
+                    else:
+                        inputs.append(y[j]) #tensor from earlier layer
+                im = inputs #apply changes to feature map
+        im = m(im) # run submodel with updated feature map
+        if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
+              y.append(im)
+        else:
+            y.append(None)
+    torch.cuda.synchronize() #wait for gpu
+    
+        #NOTE: INFERENCE STEP C: SPATIAL POOLING which is considered separate from the backbone occurs
+        #                        at layer 9 inside the model might want to pull that one out of backbone
 
+    #INFERENCE STEP D: NECK fuse features across scales so both large and small objects have context
+    #                  occurs in layers 10-21 of model
+    
+    for m in model.model[backbone_boundary+1:neck_boundary+1]: #NOTE loops through each layer interior to yolov8
+                                                 #until reaching the backbone stage's boundary
+        #NOTE tensor feature map shouldn't initially originate from  -1
+        if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
+            if(isinstance(m.f,int) #if from is a single int not an int list
+                im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
+            else:
+                inputs = [] #create list to hold tensors c1 and c2
+                for j in m.f: #loop through all layers input came from
+                    if j == -1: 
+                        inputs.append(im) #tensor from previous layer
+                    else:
+                        inputs.append(y[j]) #tensor from earlier layer
+                im = inputs #apply changes to feature map
+        im = m(im) # run submodel with updated feature map
+        if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
+              y.append(im)
+        else:
+            y.append(None)
+    torch.cuda.synchronize() #wait for gpu
+
+    #INFERENCE STEP E: HEAD predict bounding boxes and class scores from fused features
+    #                  occurs in layer 22
+    for m in model.model[neck_boundary+1:]: #NOTE loops through each layer interior to yolov8
+                                                 #until reaching the backbone stage's boundary
+        #NOTE tensor feature map shouldn't initially originate from  -1
+        if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
+            if(isinstance(m.f,int) #if from is a single int not an int list
+                im = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
+            else:
+                inputs = [] #create list to hold tensors c1 and c2
+                for j in m.f: #loop through all layers input came from
+                    if j == -1: 
+                        inputs.append(im) #tensor from previous layer
+                    else:
+                        inputs.append(y[j]) #tensor from earlier layer
+                im = inputs #apply changes to feature map
+        im = m(im) # run submodel with updated feature map
+        if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
+              y.append(im)
+        else:
+            y.append(None)
+    torch.cuda.synchronize() #wait for gpu    
 
 def postprocess_stage():
 
