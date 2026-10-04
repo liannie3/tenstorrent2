@@ -2,8 +2,9 @@
 model:
   name: openai/clip-vit-large-patch14-336   # Hugging Face checkpoint (frozen)
   layer_index: -2          # hidden layer fed to projector (LLaVA-1.5 style)          !!! Check with Saby !!!
-  keep_cls: false          # false = 576 tokens, true = 577.                          !!! Check with Saby !!!
+  keep_cls: true           # 577 tokens = 576 patches + CLS (paper §3.4)                    
   projector_weights: null  # null = random init until trained weights are available   !!! Check with Saby !!!
+  projector_out_dim: 2048  # TinyLlama-1.1B embedding width (paper §3.3)
 
 # ---------------- Run ----------------
 run:
