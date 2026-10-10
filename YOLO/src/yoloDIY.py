@@ -64,7 +64,7 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
     #PRE-PROCESS STEP A: pre-transform input img before inference
     with timed(store, "A_LetterBox", device):
         same_shapes = len({x.shape for x in im}) == 1 #determine if tensors are of same dimension/size
-        letterbox = LetterBox( new_shape = (640,640), auto = same_shapes,  stride = 32 ) #stride logic might need to be addressed
+        letterbox = LetterBox( new_shape = (640,640), auto = same_shapes,  stride = 32 ) #TODO: might need to load stride from model itself
         resized_imgs = [letterbox(image = x) for x in im] #resize each image passed in the current batch
 
     #PRE-PROCESS STEP B: batch numpy stacking
@@ -93,6 +93,16 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
     
     return im, orig_shapes #return img tensor after pre processing is applied to it, and orignal tensor for post processing
 
+#heleper function for layer walk during inference stage, equivalent to _predict_once
+def run_layers(model, layers, x, y):
+    from m in layers:
+        if m.f != -1: #if current layer not taking input from previous layer
+            x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]
+        x = m(x) #run layer wiht updated feature map
+        y.append(x if m.i in model.save else None) #only append layers that are indicated to be used later
+                                                   #since model.save indicates layers that are yet to be used
+    return x
+
 
 #arg of model, feature map tensor im, and device that model is to be run on
 #Based on _predict_once method from ultralytics/nn/tasks.py 
@@ -106,58 +116,22 @@ def inference_stage(model, im, device = 'cuda:0'):
     #INFERENCE STEP A: BACKBONE extract features from input at multiple resolutions
     #C2F (CSP (Constraint Satisfaction Problem) Bottleneck with 2 convolutions, faster)
     with timed(store, "A_backbone", device):
-        for m in model.model[: BACKBONE_BOUNDARY+1]: #NOTE: loops through each layer interior to yolov8
-                                                     #until reaching the backbone stage's boundary
-            #NOTE: tensor feature map shouldn't initially originate from  -1
-            if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
-                # if isinstance(m.f,int): #if from is a single int not an int list
-                    # x = y[m.f] #grab stored output tensor from earlier layer to use as input for curr layer
-                # else:
-                    # inputs = [] #create list to hold tensors c1 and c2
-                    # for j in m.f: #loop through all layers input came from
-                        # if j == -1:
-                            # inputs.append(x) #tensor from previous layer
-                        # else:
-                            # inputs.append(y[j]) #tensor from earlier layer
-                    # x = inputs #apply changes to feature map
-                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f] #does everything outlined above
-            x = m(x) # run submodel with updated feature map
-            if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
-                y.append(x)
-            else:
-                y.append(None)
-    
+        x = run_layers(model, model.model[: BACKBONE_BOUNDARY+1], x, y)
+        #NOTE: loops through each layer interior to yolo until reaching the backbone stage's boundary
         #NOTE: potential inference step: SPATIAL POOLING which is considered separate from the backbone occurs
         #                        at layer 9 inside the model might want to pull that one out of backbone
 
     #INFERENCE STEP B: NECK fuse features across scales so both large and small objects have context
     #                  occurs in layers 10-21 of model
     with timed(store, "B_neck", device):
-        for m in model.model[BACKBONE_BOUNDARY+1:NECK_BOUNDARY+1]: #NOTE: loops through each layer interior to yolov8
-                                                                   #until reaching the backbone stage's boundary
-            #NOTE: tensor feature map shouldn't initially originate from  -1
-            if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
-                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]
-            x = m(x) # run submodel with updated feature map
-            if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
-                y.append(x)
-            else:
-                y.append(None)
+        x = run_layers(model, model.model[BACKBONE_BOUNDARY+1: NECK_BOUNDARY+1], x, y)
+        for m in model.model[BACKBONE_BOUNDARY+1:NECK_BOUNDARY+1]: 
+        #NOTE: loops through each layer interior to yolov8 until reaching the backbone stage's boundary
                 
     #INFERENCE STEP D: HEAD predict bounding boxes and class scores from fused features
     #                  occurs in layer 22
     with timed(store, "C_head", device):
-        for m in model.model[NECK_BOUNDARY+1:]: #NOTE: loops through each layer interior to yolov8
-                                                #until reaching the backbone stage's boundary
-            #NOTE: tensor feature map shouldn't initially originate from  -1
-            if m.f != -1: #.f indicates input came from (hence .f) model directly preeceding it
-                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]
-            x = m(x) # run submodel with updated feature map
-            if m.i in model.save: #model.save is a list of layer indiices that indicate which layers' outputs ust be saved
-                  y.append(x)
-            else:
-                y.append(None)
-
+        x = run_layers(model, model.model[NECK_BOUNDARY+1:], x, y)
     return x
 
 
@@ -194,31 +168,48 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
 def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
 
     #read images before beginning timing as ultralyitics doesn't include this portion in preprocess timing
-    batches = [img_paths[i:i + batch_size] for i in range(0, len(img_paths), batch_size)]
-    loaded = [[cv2.imread(str(p)) for p in b] for b in batches]
+    batches = [img_paths[i:i + batch_size] for i in range(0, len(img_paths), batch_size)] #fills batches with respective image paths
+    loaded = [[cv2.imread(str(path)) for path in b] for b in batches] #loads file paths present in each batch
+
     #warmup model only on GPU
     if torch.device(device).type != "cpu":
-        saved = {s: timings[s] for s in STAGES}
-        for s in STAGES:
+        saved = {s: timings[s] for s in STAGES} #timing is hardcoded so need to send warmup times to garabge dict
+        for s in STAGES: #loop through pre, inference, and post
             timings[s] = defaultdict(list)
-            im, shapes = preprocess_stage(loaded[0], model, IMGSZ, device, fp16)
+            im, shapes = preprocess_stage(loaded[0], model, IMGSZ, device, fp16) #warmup with first loaded batch
+            predictions = inference_stage(model, im, device)
+            postprocess_stage(predictions, im, shapes, CONF_THRES, IOU_THRESH, device)
+
+        for s in STAGES: #empty dictionary following warmup
+            timings[s].clear()
             
 
-    #loop through model
+    #run model on all batches and store results 
+    results =[]
+    num_images = 0
+
+    for imgs in loaded:
+        im, shapes = preprocess_stage(imgs, model, IMGSZ, device, fp16) #warmup with first loaded batch
+        predictions = inference_stage(model, im, device)
+        results.append(postprocess_stage(predictions, im, shapes, CONF_THRES, IOU_THRESH) );
+        n_images += len(imgs) #keep track of number of images 
+
+
+    #print results of runs
+    print(f"per-image timings (ms), {n_images} images, batch={batch_size}")
+        for stage in STAGES:
+            total = 0.0
+            for step, vals in timings[stage].items():
+                per_img = sum(vals) / n_images
+                total += per_img
+                print(f"  {stage:<16} {step:<20} {per_img:8.2f}")
+        print(f"  {stage:<16} {'TOTAL':<20} {total:8.2f}")
+    return results    
     
-    #loop through all images present in the provided directory at a step size equal to batch size
-    for i in range(0, len(image_paths), batch_size):
-        preprocess_stage()
-
-        inference_stage()
-
-        postprocess_stage()
     
 
 
 def main(img_dir):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
     #load model 
     #TODO: potential area to be expanded upon
     model = YOLO(WEIGHTS).model.fuse.eval().to(DEVICE)
@@ -227,14 +218,12 @@ def main(img_dir):
         #.eval() indicates use deployment, not training
         #.to(DEVICE) puts entire model on same DEVICE
     fp16 = FALSE
-    #model.to(memory_format=torch.channels_last) required for x86 CPU
 
-    
-    #going to want to warmup the model (actual pipeline not just yolo model) 
-    #might be useful to validate correctness of results against yolov8n.pt
-    #setup phase separate of pre process
+    #list of valid img_paths in test input directory
+    formats  ={".jpg", ".jpeg", ".png"} #TODO: might want to add more acceptable file formats
+    img_paths = sorted(p for p in Path(img_dir).iterdir() if p.suffix.lower() in formats)
 
-    dummy_tensor = preprocess_stage(dummy_imgs, device = device)
+    return run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
 
 if __name__ == "__main__":
     main("~/tenstorrent2/YOLO/input_images")
