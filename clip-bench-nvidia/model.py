@@ -66,10 +66,13 @@ if __name__ == '__main__':
     projector = load_mlp_projector(config, model.config.hidden_size)
 
     dtype = resolve_dtype(run['precision'])
-    paths = data.list_image_paths(config)
-    print(f"found {len(paths)} images in {data.resolve_image_dir(config)}")
+    paths = data.load_paths(config)
+    print(f"found {len(paths)} images in {config['data']['path']}")
 
-    for batch_paths in data.iter_batches(paths, run['batch_size']):
+    max_batches = run.get('max_batches')
+    for i, batch_paths in enumerate(data.iter_batches(paths, run['batch_size'])):
+        if max_batches is not None and i >= max_batches:
+            break
         images = data.load_images(batch_paths)
         pixel_values = data.preprocess(processor, images, run['device'], dtype)
 
