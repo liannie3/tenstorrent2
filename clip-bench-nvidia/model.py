@@ -3,6 +3,7 @@ import torch.nn as nn
 from transformers import CLIPImageProcessorPil, CLIPVisionModel
 
 import harness.config as cfg
+import harness.data as data
 
 ## Allowed run types for model
 DTYPES = {'fp32': torch.float32, 'fp16': torch.float16, 'bf16': torch.bfloat16}
@@ -64,19 +65,22 @@ if __name__ == '__main__':
     model, processor = load_model_and_processor(config)
     projector = load_mlp_projector(config, model.config.hidden_size)
 
-    size = config['data']['image_size']
-    pixel_values = torch.randn(
-        run['batch_size'], 3, size, size,
-        device=run['device'], dtype=resolve_dtype(run['precision']),
-    )
+    dtype = resolve_dtype(run['precision'])
+    paths = data.list_image_paths(config)
+    print(f"found {len(paths)} images in {data.resolve_image_dir(config)}")
 
-    with torch.inference_mode():
-        outputs = model(pixel_values, output_hidden_states=True)
-        features = select_image_features(outputs, config)
-        embeddings = projector(features)
+    for batch_paths in data.iter_batches(paths, run['batch_size']):
+        images = data.load_images(batch_paths)
+        pixel_values = data.preprocess(processor, images, run['device'], dtype)
 
-    print('hidden states:', len(outputs.hidden_states))
-    print('features     :', tuple(features.shape))
-    print('projected    :', tuple(embeddings.shape))
+        with torch.inference_mode():
+            outputs = model(pixel_values, output_hidden_states=True)
+            features = select_image_features(outputs, config)
+            embeddings = projector(features)
+
+        print(f"{[p.name for p in batch_paths]}")
+        print('  pixel_values:', tuple(pixel_values.shape))
+        print('  features    :', tuple(features.shape))
+        print('  projected   :', tuple(embeddings.shape))
 
 

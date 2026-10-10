@@ -17,8 +17,11 @@ run:
 
 # ---------------- Data ----------------
 data:
-  image_dir: data/images
+  nuscenes_root: data/nuscenes   # extracted v1.0-mini root (contains samples/, sweeps/, maps/)
+  camera: CAM_FRONT              # keyframe camera read from <root>/samples/<camera>
   image_size: 336
+  max_images: null               # null = all keyframes (404 in mini); N = first N after stride
+  stride: 1                      # take every Nth frame; >1 spreads the sample across scenes
 
 # ---------------- Correctness ----------------
 parity:
