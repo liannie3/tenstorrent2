@@ -10,8 +10,8 @@ model:
 run:
   device: auto             # cuda on Jetson, cpu on other platforms
   precision: auto          
-  batch_size: 4            # images per batch
-  max_batches: 1        # null = run all batches; N = stop after N batches
+  batch_sizes: [1, 2, 4, 8]  # one sub-test per batch size, each over data.max_images images
+  max_batches: null        # null = run all batches; N = stop after N batches (per sub-test)
   warmup_iters: 20        
   timed_iters: 200
   seed: 0
