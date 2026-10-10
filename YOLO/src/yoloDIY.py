@@ -17,6 +17,7 @@ from ultralytics.utils.nms import non_max_suppression #ultralyitics post process
 
 #NOTE: runs on CPU                                   
 from ultralytics.utils.ops import scale_boxes #ultralyitics utility function that rescales bounding boxes from one image to another
+import torchvision #forces ultralytics' NMS to use torchvision's GPU based NMS
 
 #to store timing for each layer of each stage
 STAGES = ("pre_processing", "inference", "post_processing")
@@ -138,7 +139,7 @@ def inference_stage(model, im, device = 'cuda:0'):
         x = run_layers(model, model.model[NECK_BOUNDARY+1:], x, y) #runs HEAD layer only
     return x
 ########################################################################################################################################################################
-#                      | | | |
+#                         | | | |
 #   Post-Processing Stage V V V V
 ########################################################################################################################################################################
 #based on postprocess function from ultralytics/models/yolo/detect/predict.py
@@ -170,13 +171,22 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
     return filtered_preds #returns the list of result objects containing the post processed predition
 ########################################################################################################################################################################
 
-@torch.inference_mode() #indicates no training for realistic performance
+@torch.inference_mode() #indicates not training, for realistic performance
 #based on benchmark class from ultralytics/engine/predictor.py
 def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
 
     #read images before beginning timing as ultralyitics doesn't include this portion in preprocess timing
-    batches = [img_paths[i:i + batch_size] for i in range(0, len(img_paths), batch_size)] #fills batches with respective image paths
-    loaded = [[cv2.imread(str(path)) for path in b] for b in batches] #loads file paths present in each batch
+    images = []
+    for path in img_paths:
+        img = cv2.imread(str(path))
+        if img is None: #cv2 returns None in case of error
+            print(f"WARNING: SKIPPING UNREADABLE PATH: {path}")
+            continue
+        images.append(img)
+    if not images:
+        sys.exit("ERROR: NO IMAGES FROM DIRECTORY COULD BE READ")
+        
+    loaded = [images[i:i+batch_size] for i in range(0, len(images), batch_size)] #loads file paths present in each batch
 
     #warmup model only on GPU
     if torch.device(device).type != "cpu": #NOTE: if intend to begin in steady state CPU for small img sample size, warmup CPU too (YOLOv8 doesn't do this)
@@ -201,14 +211,21 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
     for stage in STAGES:
         total = 0.0
         for step, vals in timings[stage].items():
-            per_img = sum(vals) / num_images
+            per_img = np.median(vals) #used to be mean of times sum(vals) / num_image
             total += per_img
             print(f"  {stage:<16} {step:<20} {per_img:8.2f}")
         print(f"  {stage:<16} {'TOTAL':<20} {total:8.2f}")
-    return results    
-    
+    return results
+
 def main(img_dir):
-    #load model 
+    #VALIDATE IMAGE PATH
+    img_dir = Path(img_dir).expanduser().resolve()
+    if not img_dir.exists():
+        sys.exit(f"ERROR: IMAGE FOLDER NOT FOUND: {img_dir}")
+    if not img_dir.is_dir():
+        sys.exit(f"ERROR: PATH PROVIDED ISN'T A DIRECTORY: {img_dir}")
+    
+    #load model
     #TODO: potential area to be expanded upon
     model = YOLO(WEIGHTS).model.fuse().eval().to(DEVICE)
         #.model exposes the NN layers within the model (enables differentiation btw backbone, neck, and head within inference)
@@ -219,11 +236,8 @@ def main(img_dir):
 
     #list of valid img_paths in test input directory
     formats  ={".jpg", ".jpeg", ".png"} #TODO: might want to add more acceptable file formats
-    img_paths = sorted(p for p in Path(img_dir).expanduser().iterdir() if p.suffix.lower() in formats)
+    img_paths = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in formats) #grab file paths of only valid file types
     return run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
 
 if __name__ == "__main__":
-    main("~/tenstorrent2/YOLO/input_images")
-
-
-
+    main(Path(__file__).parent.parent/ "input_images" / "CAM_FRONT")
