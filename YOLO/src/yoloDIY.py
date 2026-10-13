@@ -81,6 +81,23 @@ def process_timings(): #reads all pending GPU events achronously at end of run
             store[name].append(start.elapsed_time(end)) 
         async_timings.clear() #empty for subsequent runs
 
+
+def display_results(stage_wall_timings,num_images, batch_size, device):
+    print(f"per-image timings (ms), {num_images} images, batch={batch_size}, device={device}")
+    for stage in STAGES: #for each stage
+        total_time = 0.0
+        for step, vals in timings[stage].items(): #loop through each stage's dictionary
+            per_img = np.median(vals) #TODO: could also use mean, but median is serviceable for 1 batch size
+            total_time += per_img #track total time for stage
+            print(f"  {stage:<16} {step:<20} {per_img:8.2f}")
+        if SUBSTEP_TIMING: #if we are including substep timing
+            print(f"  {stage:<16} {'SUM OF STEPS':<20} {total_time:8.2f}")
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
+        else: #if we aren't including substep timing
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
+            
+# def record_results():
+
 #######################################################################################################################################################################  
 #                        | | | |
 #   Pre-Processing Stage V V V V
@@ -202,6 +219,7 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
     return filtered_preds #returns the list of result objects containing the post processed predition
 ########################################################################################################################################################################
 
+
 @torch.inference_mode() #indicates not training, for realistic performance
 #based on benchmark class from ultralytics/engine/predictor.py
 def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
@@ -259,18 +277,7 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
     process_timings()
     
     #print results of runs
-    print(f"per-image timings (ms), {num_images} images, batch={batch_size}")
-    for stage in STAGES:
-        total = 0.0
-        for step, vals in timings[stage].items():
-            per_img = np.median(vals) #used to be mean of times sum(vals) / num_image
-            total += per_img
-            print(f"  {stage:<16} {step:<20} {per_img:8.2f}")
-        if SUBSTEP_TIMING:
-            print(f"  {stage:<16} {'SUM OF STEPS':<20} {total:8.2f}")
-            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
-        else:
-            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
+    display_results(stage_wall_timings, num_images, batch_size, device)
     return results
 
 
