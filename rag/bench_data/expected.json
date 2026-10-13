@@ -1,6 +1,6 @@
 {
   "format": "RAG_EXPECTED1",
-  "query_count": 10,
+  "query_count": 128,
   "results": [
     {
       "accepted": true,
@@ -57,8 +57,716 @@
       "top1_id": 0
     },
     {
-      "accepted": false,
+      "accepted": true,
       "query_index": 9,
+      "score": 0.9525801539421082,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 10,
+      "score": 0.9525827169418335,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 11,
+      "score": 0.9524502754211426,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 12,
+      "score": 0.9524558186531067,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 13,
+      "score": 0.9524720311164856,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 14,
+      "score": 0.9523822069168091,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 15,
+      "score": 0.952414333820343,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 16,
+      "score": 0.9524941444396973,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 17,
+      "score": 0.9523980617523193,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 18,
+      "score": 0.952350914478302,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 19,
+      "score": 0.9524786472320557,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 20,
+      "score": 0.9525377750396729,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 21,
+      "score": 0.9524394869804382,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 22,
+      "score": 0.9524215459823608,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 23,
+      "score": 0.95247483253479,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 24,
+      "score": 0.9524508118629456,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 25,
+      "score": 0.9524353742599487,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 26,
+      "score": 0.9524461627006531,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 27,
+      "score": 0.9524056315422058,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 28,
+      "score": 0.9523622393608093,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 29,
+      "score": 0.9524356126785278,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 30,
+      "score": 0.9524890184402466,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 31,
+      "score": 0.9524245858192444,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 32,
+      "score": 0.952399730682373,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 33,
+      "score": 0.952471911907196,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 34,
+      "score": 0.9524734020233154,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 35,
+      "score": 0.9524319767951965,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 36,
+      "score": 0.9524307250976562,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 37,
+      "score": 0.9524244666099548,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 38,
+      "score": 0.9523926973342896,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 39,
+      "score": 0.9524174928665161,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 40,
+      "score": 0.9524537920951843,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 41,
+      "score": 0.9524052143096924,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 42,
+      "score": 0.9523846507072449,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 43,
+      "score": 0.9524487257003784,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 44,
+      "score": 0.952477216720581,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 45,
+      "score": 0.9524305462837219,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 46,
+      "score": 0.9524199962615967,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 47,
+      "score": 0.9524392485618591,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 48,
+      "score": 0.9524256587028503,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 49,
+      "score": 0.9524243474006653,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 50,
+      "score": 0.9524322152137756,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 51,
+      "score": 0.9524042010307312,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 52,
+      "score": 0.9523805975914001,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 53,
+      "score": 0.9524288773536682,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 54,
+      "score": 0.9524608254432678,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 55,
+      "score": 0.9524228572845459,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 56,
+      "score": 0.9524082541465759,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 57,
+      "score": 0.9524485468864441,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 58,
+      "score": 0.9524468183517456,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 59,
+      "score": 0.9524245262145996,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 60,
+      "score": 0.9524245262145996,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 61,
+      "score": 0.9524141550064087,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 62,
+      "score": 0.9523934721946716,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 63,
+      "score": 0.9524157643318176,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 64,
+      "score": 0.9524416923522949,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 65,
+      "score": 0.9524078965187073,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 66,
+      "score": 0.9523957371711731,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 67,
+      "score": 0.9524391889572144,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 68,
+      "score": 0.9524568915367126,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 69,
+      "score": 0.952426552772522,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 70,
+      "score": 0.9524192810058594,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 71,
+      "score": 0.9524269104003906,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 72,
+      "score": 0.952414870262146,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 73,
+      "score": 0.9524188041687012,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 74,
+      "score": 0.9524263739585876,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 75,
+      "score": 0.9524036049842834,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 76,
+      "score": 0.9523875713348389,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 77,
+      "score": 0.9524260759353638,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 78,
+      "score": 0.9524497389793396,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 79,
+      "score": 0.952422559261322,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 80,
+      "score": 0.9524123072624207,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 81,
+      "score": 0.9524381756782532,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 82,
+      "score": 0.952434241771698,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 83,
+      "score": 0.9524201154708862,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 84,
+      "score": 0.9524209499359131,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 85,
+      "score": 0.9524087309837341,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 86,
+      "score": 0.952392578125,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 87,
+      "score": 0.9524140954017639,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 88,
+      "score": 0.9524359703063965,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 89,
+      "score": 0.9524096846580505,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 90,
+      "score": 0.9524018168449402,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 91,
+      "score": 0.9524350762367249,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 92,
+      "score": 0.9524469375610352,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 93,
+      "score": 0.9524244070053101,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 94,
+      "score": 0.9524187445640564,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 95,
+      "score": 0.9524197578430176,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 96,
+      "score": 0.9524077773094177,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 97,
+      "score": 0.9524145722389221,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 98,
+      "score": 0.9524224996566772,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 99,
+      "score": 0.9524028897285461,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 100,
+      "score": 0.9523912668228149,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 101,
+      "score": 0.9524251222610474,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 102,
+      "score": 0.9524446129798889,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 103,
+      "score": 0.9524233341217041,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 104,
+      "score": 0.952415406703949,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 105,
+      "score": 0.9524322748184204,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 106,
+      "score": 0.9524263143539429,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 107,
+      "score": 0.9524163603782654,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 108,
+      "score": 0.9524176716804504,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 109,
+      "score": 0.9524039626121521,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 110,
+      "score": 0.9523905515670776,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 111,
+      "score": 0.952412486076355,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 112,
+      "score": 0.9524329304695129,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 113,
+      "score": 0.9524115324020386,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 114,
+      "score": 0.9524068236351013,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 115,
+      "score": 0.9524340629577637,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 116,
+      "score": 0.9524417519569397,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 117,
+      "score": 0.9524233937263489,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 118,
+      "score": 0.9524178504943848,
+      "top1_id": 6
+    },
+    {
+      "accepted": true,
+      "query_index": 119,
+      "score": 0.95241379737854,
+      "top1_id": 7
+    },
+    {
+      "accepted": true,
+      "query_index": 120,
+      "score": 0.9524009227752686,
+      "top1_id": 0
+    },
+    {
+      "accepted": true,
+      "query_index": 121,
+      "score": 0.9524098038673401,
+      "top1_id": 1
+    },
+    {
+      "accepted": true,
+      "query_index": 122,
+      "score": 0.9524187445640564,
+      "top1_id": 2
+    },
+    {
+      "accepted": true,
+      "query_index": 123,
+      "score": 0.9524016380310059,
+      "top1_id": 3
+    },
+    {
+      "accepted": true,
+      "query_index": 124,
+      "score": 0.9523938298225403,
+      "top1_id": 4
+    },
+    {
+      "accepted": true,
+      "query_index": 125,
+      "score": 0.9524258971214294,
+      "top1_id": 5
+    },
+    {
+      "accepted": true,
+      "query_index": 126,
+      "score": 0.9524434804916382,
+      "top1_id": 6
+    },
+    {
+      "accepted": false,
+      "query_index": 127,
       "score": 0.0037295373622328043,
       "top1_id": 6
     }
