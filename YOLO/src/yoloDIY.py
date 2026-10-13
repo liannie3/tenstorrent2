@@ -40,17 +40,46 @@ def _sync(device): #only waits  for transfer to gpu if we're using gpu in the fi
     if torch.device(device).type == "cuda": 
         torch.cuda.synchronize()
     #NOTE: needs to be adjusted for TT
-
+    
+SUBSTEP_TIMING = False #used to compare the wall times with or without the substep timings
+                       #necessary since calling record and query takes a little CPU time
+                       #when measuring the substeps of each stage.
+                       #ultralyitics times the more abstracted stages so this CPU time ins't incurred
+                       #it shows up in latency numbers when CPU has to wait for GPU (i.e. CPU limited runs)
+                       #with a more powerful CPU, this bottleneck wouldn't occur since GPU wouldn't be waiting for CPU (likely other way around)
+                       
+async_timings = [] #GPU event pairs that are waiting to be read
 #timer helper
 #sync's before and after to isolate current step's GPU work (i.e. no spill over from previous step)
 #runs setup code before the block and runs exit code following the block
+#NOTE: CHANGED FROM SYNCHRONOUS TO ASYNCHRONOUS TIMING
+#TODO: WILL HAVE TO ADJUST OR CREATE NEW VERSION FOR TT
 @contextmanager
-def timed(store, name, device):
-    _sync(device) #flush previous GPU work3
-    t0 = time.perf_counter()
-    yield  #exit code below 
-    _sync(device) #include this step's GPU work
-    store[name].append((time.perf_counter() - t0 ) * 1000) #convert to ms timing and store in dictionary at associated key
+def timed(store, name, device, gpu_work = True):
+    if not SUBSTEP_TIMING:
+        yield
+        return
+    if torch.device(device).type == "cuda" and gpu_work:
+        start = torch.cuda.Event(enable_timing = True)
+        end = torch.cuda.Event(enable_timing = True)
+        start.record() #gpu timestamp this point wihtout cpu waiitng
+        yield
+        end.record()
+        end.query() #tells driver to send out queued events now instead of waiting till they're done processing
+                    #NOTE: intended to make more realistic to what occurs in actual yolo package
+        async_timings.append((store, name, start, end)) #store timing data to be processed after run
+    else:
+        t0 = time.perf_counter()
+        yield  #exit code below 
+        store[name].append((time.perf_counter() - t0 ) * 1000) #convert to ms timing and store in dictionary at associated key
+
+#TODO: WILL HAVE TO ADJUST OR CREATE NEW VERSION FOR TT
+def process_timings(): #reads all pending GPU events achronously at end of run
+    if async_timings: #if events are pending
+        torch.cuda.synchronize() #force CPU to wait for GPU
+        for store, name, start, end in async_timings: #store all GPU event data
+            store[name].append(start.elapsed_time(end)) 
+        async_timings.clear() #empty for subsequent runs
 
 #######################################################################################################################################################################  
 #                        | | | |
@@ -61,16 +90,18 @@ def timed(store, name, device):
 #Passes a list of numpy tensors as im
 def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
     store = timings["pre_processing"]
-    orig_shapes = [x.shape for x in im]  # needed later by postprocess to rescale boxes
+    orig_shapes = [x.shape for x in im]  #needed later by postprocess to rescale boxes
     
     #PRE-PROCESS STEP A: pre-transform input img before inference
-    with timed(store, "A_LetterBox", device):
+    #NOTE: occurs before host to device (GPU) transfer so not GPU work
+    with timed(store, "A_LetterBox", device, gpu_work = False):
         same_shapes = len({x.shape for x in im}) == 1 #determine if tensors are of same dimension/size
         letterbox = LetterBox( new_shape = (IMGSZ,IMGSZ), auto = same_shapes,  stride = 32 ) #TODO: might need to load stride from model itself
         resized_imgs = [letterbox(image = x) for x in im] #resize each image passed in the current batch
 
     #PRE-PROCESS STEP B: batch numpy stacking
-    with timed(store, "B_batch_stack", device):
+    #NOTE: occurs before host to device (GPU) transfer so not GPU work
+    with timed(store, "B_batch_stack", device, gpu_work = False):
         if len(resized_imgs) == 1:
             im = torch.from_numpy(resized_imgs[0]).unsqueeze(0) 
         else:
@@ -174,7 +205,11 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
 @torch.inference_mode() #indicates not training, for realistic performance
 #based on benchmark class from ultralytics/engine/predictor.py
 def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
-
+    #reset async timigns from previous runs
+    for s in STAGES:
+        timings[s].clear()
+    async_timings.clear()
+    
     #read images before beginning timing as ultralyitics doesn't include this portion in preprocess timing
     images = []
     for path in img_paths:
@@ -189,23 +224,40 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
     loaded = [images[i:i+batch_size] for i in range(0, len(images), batch_size)] #loads file paths present in each batch
 
     #warmup model only on GPU
+    #TODO: verify how YOLO warmsup model
     if torch.device(device).type != "cpu": #NOTE: if intend to begin in steady state CPU for small img sample size, warmup CPU too (YOLOv8 doesn't do this)
         im, shapes = preprocess_stage(loaded[0], device, fp16) #warmup with first loaded batch
         predictions = inference_stage(model, im, device)
         postprocess_stage(predictions, im, shapes, CONF_THRES, IOU_THRESH, device)
         for s in STAGES: #empty dictionary following warmup
             timings[s].clear()
+        async_timings.clear() #clear pending GPU events from warmup
     
     #run model on all batches and store results 
     results =[]
     num_images = 0
 
+    #NOTE: internal timing of model stages only times either GPU or CPU work, when in reality both are occuring during some steps
+    #      for instance during inference there are tiny overhead operations that queue on the CPU, and the GPU has to wait for them
+    #      to most accurately represent Yolov8n's timing we'll keep track of both time on GPU/CPU and wall-time (or real time) and display both for extra context
+    stage_wall_timings = {s : [] for s in STAGES} #wall clock time to be hollistically measured like ultralytics does
     for imgs in loaded:
-        im, shapes = preprocess_stage(imgs, device, fp16) 
+        _sync(device) #isolates work between stages
+        t0 = time.perf_counter()
+        im, shapes = preprocess_stage(imgs, device, fp16)
+        _sync(device)
+        t1 = time.perf_counter() 
         predictions = inference_stage(model, im, device)
+        _sync(device)
+        t2 = time.perf_counter()
         results.append(postprocess_stage(predictions, im, shapes, CONF_THRES, IOU_THRESH, device) );
+        _sync(device)
+        t3 = time.perf_counter()
+        for s, dt in zip(STAGES, (t1-t0, t2-t1, t3-t2) ):
+            stage_wall_timings[s].append(dt * 1000)
         num_images += len(imgs) #keep track of number of images 
-
+    process_timings()
+    
     #print results of runs
     print(f"per-image timings (ms), {num_images} images, batch={batch_size}")
     for stage in STAGES:
@@ -214,8 +266,39 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
             per_img = np.median(vals) #used to be mean of times sum(vals) / num_image
             total += per_img
             print(f"  {stage:<16} {step:<20} {per_img:8.2f}")
-        print(f"  {stage:<16} {'TOTAL':<20} {total:8.2f}")
+        if SUBSTEP_TIMING:
+            print(f"  {stage:<16} {'SUM OF STEPS':<20} {total:8.2f}")
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
+        else:
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
     return results
+
+
+# #NOTE: temporary function to gauge the latency incurred by overhead python wrapper calls
+# def bench_wrappers(model, img, device = DEVICE, fp16 = FP16):
+#     SUBSTEP_TIMING = False
+#     #compares the raw layer loop vs model(im) vs ultralytics' full inference path on one image
+#     y = YOLO(WEIGHTS)
+#     y.predict(img, device = device, verbose = False) #builds ultralytics' predictor + AutoBackend
+#     im, _ = preprocess_stage([img], device, fp16)
+# 
+#     def bench(f, n = 300):
+#         for _ in range(20): f() #warmup
+#         _sync(device); t = time.perf_counter()
+#         for _ in range(n): f()
+#         _sync(device); return (time.perf_counter() - t) / n * 1000
+# 
+#     tests = {
+#             "your layer loop ": lambda: run_layers(model, model.model, im, []),
+#             "model(im)       ": lambda: model(im),
+#             "ultralytics path": lambda: y.predictor.inference(im),
+#         }
+#     names = list(tests)
+#     with torch.inference_mode():
+#         for r in range(3):
+#             order = names[r:] + names[:r] #rotate which one goes first each round
+#             print(f"round {r + 1}: " + ", ".join(f"{n.strip()} {bench(tests[n]):.2f} ms" for n in order))
+
 
 def main(img_dir):
     #VALIDATE IMAGE PATH
@@ -237,7 +320,19 @@ def main(img_dir):
     #list of valid img_paths in test input directory
     formats  ={".jpg", ".jpeg", ".png"} #TODO: might want to add more acceptable file formats
     img_paths = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in formats) #grab file paths of only valid file types
-    return run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
+
+    global SUBSTEP_TIMING #initially false
+    print("   PASS 1: stage wall times only (overhead from substep timers disabled)   ")
+    results = run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
+
+    SUBSTEP_TIMING = True
+    print("   PASS 2: stage wall times and substep times (slight overhead from substep timers)   ")
+    results = run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
+    # bench_wrappers(model, cv2.imread(str(img_paths[0])))
+    return results
+
+
+
 
 if __name__ == "__main__":
     main(Path(__file__).parent.parent/ "input_images" / "CAM_FRONT")
