@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef RAG_HAS_CUDA
+#include <cuda_runtime_api.h>
+#endif
+
 namespace {
 
 // Bank fixture
@@ -98,6 +102,50 @@ int main() {
   match = rag::search_cpu(bank, tied_query, 0.7f);
   assert(match.accepted);
   assert(match.id == 0);
+
+#ifdef RAG_HAS_CUDA
+  int device_count = 0;
+  if (cudaGetDeviceCount(&device_count) == cudaSuccess && device_count > 0) {
+    const std::vector<float> two_queries = [&] {
+      std::vector<float> values = query;
+      values.insert(values.end(), tied_query.begin(), tied_query.end());
+      return values;
+    }();
+    const std::vector<rag::Match> reference =
+        rag::search_cpu_batch(bank, two_queries, 2, 0.7f);
+
+    rag::CudaSearcher cuda_reference(bank);
+    const std::vector<rag::Match> cuda_reference_matches =
+        cuda_reference.search_batch(two_queries, 2, 0.7f);
+    assert(cuda_reference_matches.size() == reference.size());
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+      assert(cuda_reference_matches[index].id == reference[index].id);
+      assert(cuda_reference_matches[index].accepted == reference[index].accepted);
+      assert(std::abs(cuda_reference_matches[index].score - reference[index].score) < 1e-5f);
+    }
+
+    rag::CudaOptimizedSearcher cuda_optimized(bank);
+    const std::vector<rag::Match> optimized_matches =
+        cuda_optimized.search_batch(two_queries, 2, 0.7f);
+    assert(optimized_matches.size() == reference.size());
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+      assert(optimized_matches[index].id == reference[index].id);
+      assert(optimized_matches[index].accepted == reference[index].accepted);
+      assert(std::abs(optimized_matches[index].score - reference[index].score) < 1e-5f);
+    }
+
+    rag::CudaOptimizedSearcher cuda_bf16(
+        bank, rag::SearchPrecision::bf16);
+    const std::vector<rag::Match> bf16_matches =
+        cuda_bf16.search_batch(two_queries, 2, 0.7f);
+    assert(bf16_matches.size() == reference.size());
+    for (std::size_t index = 0; index < reference.size(); ++index) {
+      assert(bf16_matches[index].id == reference[index].id);
+      assert(bf16_matches[index].accepted == reference[index].accepted);
+      assert(std::abs(bf16_matches[index].score - reference[index].score) < 5e-3f);
+    }
+  }
+#endif
 
   // Retrieval cases
   match = rag::search_cpu(bank, query, 1.0f);
