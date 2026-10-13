@@ -1,0 +1,15 @@
+{
+  "format": "RAGBANK1",
+  "entries": 8,
+  "text_dim": 2048,
+  "visual_shape": [
+    101,
+    1024
+  ],
+  "storage_dtype": "float32_little_endian",
+  "input_jsonl_sha256": "412e56937448172c3278869be2726a7103cf1e2ded032f4087a97d1d3cfdccf9",
+  "metadata": {
+    "generator": "generate_corpus.py",
+    "dataset": "synthetic-v1"
+  }
+}
