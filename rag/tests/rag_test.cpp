@@ -1,4 +1,4 @@
-#include "rag/search.h"
+#include "rag/retrieval.h"
 
 #include <cassert>
 #include <cmath>
@@ -79,6 +79,25 @@ int main() {
   assert(match.id == 1);
   assert(std::abs(match.score - 1.0f) < 1e-6f);
   assert(bank.load(match.id).description == "other");
+  const rag::RetrievalResponse accepted_response =
+      rag::retrieve_payload(bank, match);
+  assert(accepted_response.payload.has_value());
+  assert(accepted_response.payload->description == "other");
+  assert(rag::payload_bytes(accepted_response) > 0);
+
+  const std::vector<float> batch = query;
+  const std::vector<rag::Match> batch_matches =
+      rag::search_cpu_batch(bank, batch, 1, 0.7f);
+  assert(batch_matches.size() == 1);
+  assert(batch_matches.front().accepted);
+  assert(batch_matches.front().id == 1);
+
+  std::vector<float> tied_query(rag::kTextDim);
+  tied_query[0] = 1.0f;
+  tied_query[1] = 1.0f;
+  match = rag::search_cpu(bank, tied_query, 0.7f);
+  assert(match.accepted);
+  assert(match.id == 0);
 
   // Retrieval cases
   match = rag::search_cpu(bank, query, 1.0f);
@@ -88,6 +107,10 @@ int main() {
   match = rag::search_cpu(bank, query, 0.8f);
   assert(!match.accepted);
   assert(match.id == 0);
+  const rag::RetrievalResponse rejected_response =
+      rag::retrieve_payload(bank, match);
+  assert(!rejected_response.payload.has_value());
+  assert(rag::payload_bytes(rejected_response) == 0);
 
   query[0] = 0.0f; 
   query[1] = 0.0f;

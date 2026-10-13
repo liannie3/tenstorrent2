@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rag/bank.h"
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -20,6 +21,12 @@ std::vector<float> normalize_query(const std::vector<float>& query);
 Match search_cpu(
     const Bank& bank,
     const std::vector<float>& query,
+    float threshold = 0.7f);
+
+std::vector<Match> search_cpu_batch(
+    const Bank& bank,
+    const std::vector<float>& queries,
+    std::size_t query_count,
     float threshold = 0.7f);
 
 #ifdef RAG_HAS_CUDA

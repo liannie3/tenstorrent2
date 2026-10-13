@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Core library
-add_library(rag_core src/bank.cpp src/search_cpu.cpp)
+add_library(rag_core src/bank.cpp src/retrieval.cpp src/search_cpu.cpp)
 target_include_directories(rag_core PUBLIC include)
 
 # Optional CUDA backend
