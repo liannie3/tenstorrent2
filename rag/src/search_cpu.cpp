@@ -6,6 +6,7 @@
 namespace rag {
 namespace {
 
+// Validation and scoring
 constexpr float kMinimumInitialScore = -2.0f;
 
 void validate_threshold(float threshold) {
@@ -25,6 +26,7 @@ float dot_product(const float* left, const float* right) {
 
 }  // namespace
 
+// Query preprocessing
 std::vector<float> normalize_query(const std::vector<float>& query) {
   if (query.size() != kTextDim) {
     throw std::invalid_argument("Query must have 2048 floats");
@@ -52,6 +54,7 @@ std::vector<float> normalize_query(const std::vector<float>& query) {
   return normalized;
 }
 
+// CPU retrieval
 Match search_cpu(
     const Bank& bank,
     const std::vector<float>& query,
@@ -67,7 +70,6 @@ Match search_cpu(
     const float* key = bank.keys() + row_start;
     const float score = dot_product(normalized_query.data(), key);
 
-    // If scores are equal, make the lower ID win
     if (score > best.score) {
       best.id = id;
       best.score = score;
@@ -76,6 +78,27 @@ Match search_cpu(
 
   best.accepted = best.score >= threshold;
   return best;
+}
+
+std::vector<Match> search_cpu_batch(
+    const Bank& bank,
+    const std::vector<float>& queries,
+    std::size_t query_count,
+    float threshold) {
+  if (query_count == 0 || queries.size() != query_count * kTextDim) {
+    throw std::invalid_argument("Query batch has an invalid shape");
+  }
+
+  std::vector<Match> matches;
+  matches.reserve(query_count);
+  for (std::size_t index = 0; index < query_count; ++index) {
+    const auto begin = queries.begin() + index * kTextDim;
+    matches.push_back(search_cpu(
+        bank,
+        std::vector<float>(begin, begin + kTextDim),
+        threshold));
+  }
+  return matches;
 }
 
 }

@@ -1,4 +1,4 @@
-#include "rag/search.h"
+#include "rag/retrieval.h"
 
 #include <fstream>
 #include <iomanip>
@@ -88,19 +88,18 @@ rag::Match run_search(
 #endif
 }
 
-void print_result(const rag::Bank& bank, const rag::Match& match) {
+void print_result(const rag::RetrievalResponse& response) {
+  const rag::Match& match = response.match;
   std::cout << std::setprecision(9)
             << "accepted=" << match.accepted
             << " id=" << match.id
             << " score=" << match.score << '\n';
 
-  if (!match.accepted) {
+  if (!response.payload) {
     return;
   }
 
-  // Large visual features stay in the payload; the CLI prints only their shape.
-  const rag::Payload payload = bank.load(match.id);
-  std::cout << "description=" << payload.description << '\n'
+  std::cout << "description=" << response.payload->description << '\n'
             << "visual_shape=" << rag::kVisualTokens
             << 'x' << rag::kVisualDim << '\n';
 }
@@ -113,7 +112,8 @@ int main(int argc, char** argv) {
     const rag::Bank bank(options.bank_path);
     const std::vector<float> query = read_query(options.query_path);
     const rag::Match match = run_search(bank, query, options);
-    print_result(bank, match);
+    const rag::RetrievalResponse response = rag::retrieve_payload(bank, match);
+    print_result(response);
     return 0;
   } catch (const std::invalid_argument& error) {
     std::cerr << "rag_query: " << error.what() << '\n';
