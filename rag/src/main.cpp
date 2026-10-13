@@ -9,19 +9,23 @@
 
 namespace {
 
+// CLI configuration
 constexpr float kDefaultThreshold = 0.7f;
 constexpr const char* kUsage =
-    "Usage: rag_query BANK QUERY_F32 [THRESHOLD] [--cuda]";
+    "Usage: rag_query BANK QUERY_F32 [THRESHOLD] "
+    "[--cuda|--cuda-optimized] [--bf16]";
 
 struct Options {
   std::string bank_path;
   std::string query_path;
   float threshold = kDefaultThreshold;
   bool use_cuda = false;
+  bool use_optimized_cuda = false;
+  bool use_bf16 = false;
 };
 
 Options parse_options(int argc, char** argv) {
-  if (argc < 3 || argc > 5) {
+  if (argc < 3 || argc > 6) {
     throw std::invalid_argument(kUsage);
   }
 
@@ -34,10 +38,23 @@ Options parse_options(int argc, char** argv) {
     const std::string argument = argv[index];
 
     if (argument == "--cuda") {
-      if (options.use_cuda) {
-        throw std::invalid_argument("--cuda was provided more than once");
+      if (options.use_cuda || options.use_optimized_cuda) {
+        throw std::invalid_argument("Only one CUDA backend may be selected");
       }
       options.use_cuda = true;
+      continue;
+    }
+
+    if (argument == "--cuda-optimized") {
+      if (options.use_cuda || options.use_optimized_cuda) {
+        throw std::invalid_argument("Only one CUDA backend may be selected");
+      }
+      options.use_optimized_cuda = true;
+      continue;
+    }
+
+    if (argument == "--bf16") {
+      options.use_bf16 = true;
       continue;
     }
 
@@ -48,14 +65,18 @@ Options parse_options(int argc, char** argv) {
     threshold_was_set = true;
   }
 
+  if (options.use_bf16 && !options.use_optimized_cuda) {
+    throw std::invalid_argument("--bf16 requires --cuda-optimized");
+  }
+
   return options;
 }
 
+// Input loading
 std::vector<float> read_query(const std::string& path) {
   constexpr std::size_t kQueryBytes =
       static_cast<std::size_t>(rag::kTextDim) * sizeof(float);
 
-  // Opening at the end lets us validate the file size before allocating or reading.
   std::ifstream input(path, std::ios::binary | std::ios::ate);
   if (!input || input.tellg() != static_cast<std::streamoff>(kQueryBytes)) {
     throw std::runtime_error(
@@ -71,15 +92,23 @@ std::vector<float> read_query(const std::string& path) {
   return query;
 }
 
+// Backend selection
 rag::Match run_search(
     const rag::Bank& bank,
     const std::vector<float>& query,
     const Options& options) {
-  if (!options.use_cuda) {
+  if (!options.use_cuda && !options.use_optimized_cuda) {
     return rag::search_cpu(bank, query, options.threshold);
   }
 
 #ifdef RAG_HAS_CUDA
+  if (options.use_optimized_cuda) {
+    const auto precision = options.use_bf16
+        ? rag::SearchPrecision::bf16
+        : rag::SearchPrecision::fp32;
+    rag::CudaOptimizedSearcher searcher(bank, precision);
+    return searcher.search(query, options.threshold);
+  }
   rag::CudaSearcher searcher(bank);
   return searcher.search(query, options.threshold);
 #else
@@ -88,6 +117,7 @@ rag::Match run_search(
 #endif
 }
 
+// Result output
 void print_result(const rag::RetrievalResponse& response) {
   const rag::Match& match = response.match;
   std::cout << std::setprecision(9)

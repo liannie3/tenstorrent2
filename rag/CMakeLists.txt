@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 project(rag_retrieval LANGUAGES CXX)
 
 option(RAG_ENABLE_CUDA "Build the CUDA retrieval backend" OFF)
+set(RAG_CUDA_ARCHITECTURES "87" CACHE STRING
+    "CUDA architectures for RAG kernels (87 is Jetson AGX Orin)")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,9 +16,12 @@ if(RAG_ENABLE_CUDA)
   enable_language(CUDA)
   find_package(CUDAToolkit REQUIRED)
   target_sources(rag_core PRIVATE src/search_cuda.cu)
-  target_link_libraries(rag_core PUBLIC CUDA::cudart)
+  target_link_libraries(rag_core PUBLIC CUDA::cudart CUDA::cublas)
   target_compile_definitions(rag_core PUBLIC RAG_HAS_CUDA=1)
-  set_target_properties(rag_core PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON)
+  set_target_properties(rag_core PROPERTIES
+    CUDA_STANDARD 17
+    CUDA_STANDARD_REQUIRED ON
+    CUDA_ARCHITECTURES "${RAG_CUDA_ARCHITECTURES}")
 endif()
 
 # Command-line application
