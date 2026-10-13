@@ -14,7 +14,7 @@ from build_bank import TEXT_DIM, build
 
 DEFAULT_ENTRIES = 8
 DEFAULT_THRESHOLD = 0.7
-DEFAULT_QUERY_COUNT = 10
+DEFAULT_QUERY_COUNT = 128
 
 
 def raw_key(entry: int) -> list[float]:
