@@ -1,0 +1,29 @@
+# Editors
+/.vscode/
+.idea/
+
+# Python
+.uv-cache/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# CMake and native builds
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+
+# Generated benchmark output
+results/
+
+# Operating systems
+.DS_Store
+Thumbs.db
