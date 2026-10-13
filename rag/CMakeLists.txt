@@ -28,6 +28,16 @@ endif()
 add_executable(rag_query src/main.cpp)
 target_link_libraries(rag_query PRIVATE rag_core)
 
+# Reusable benchmark runner and command-line harness
+add_library(rag_bench_lib src/bench.cpp)
+target_link_libraries(rag_bench_lib PUBLIC rag_core)
+
+add_executable(rag_bench bench/bench_main.cpp)
+target_link_libraries(rag_bench PRIVATE rag_bench_lib)
+if(WIN32)
+  target_link_libraries(rag_bench PRIVATE Psapi)
+endif()
+
 # Tests
 include(CTest)
 if(BUILD_TESTING)
