@@ -1,37 +1,45 @@
+# ======================================= #
+# AUTHOR:          Travis Mora
+# ORGANIZATION:    Texas A&M University
+# FILE:            base.yaml
+# CREATED:         10/15/2026
+# REVISION:        1.0
+# ======================================= #
+
+# Shared config file by each type of harness
+# CPU, NVIDIA, TENSTORRENT
+
 # ---------------- Model ----------------
 model:
-  name: openai/clip-vit-large-patch14-336   # Hugging Face checkpoint (frozen)
-  layer_index: -2          # hidden layer fed to projector (LLaVA-1.5 style)          !!! Check with Saby !!!
-  keep_cls: true           # 577 tokens = 576 patches + CLS (paper §3.4)                    
-  projector_weights: null  # null = random init until trained weights are available   !!! Check with Saby !!!
-  projector_out_dim: 2048  # TinyLlama-1.1B embedding width (paper §3.3)
+  name: openai/clip-vit-large-patch14-336   # Checkpoint for CLIP ViT-L/14-336px
+  layer_index: -2                           # hidden layer fed to projector (LLaVA-1.5 style)
+  keep_cls: true                            # 577 tokens = 576 patches + CLS (paper §3.4)
+  projector_weights: null                   # null = random init until trained weights are available   !!! Check with Saby !!!
+  projector_out_dim: 2048                   # Output dimension to TinyLlama
+
+
+  image_processor: pil     # pil | torchvision
 
 # ---------------- Run ----------------
 run:
-  device: auto             # cuda on Jetson, cpu on other platforms
-  precision: auto          
-  batch_sizes: [1, 2, 4, 8]  # one sub-test per batch size, each over data.max_images images
-  max_batches: null        # null = run all batches; N = stop after N batches (per sub-test)
-  warmup_iters: 20        
-  timed_iters: 200
+  batch_sizes: [1, 2, 4, 8]  # one sub-test per batch size (testing performance against different batch sizes)
+  max_batches: null          # null = run all batches; N = stop after N batches (per sub-test)
   seed: 0
+  warmup_iters: 20
+  timed_iters: 200
 
 # ---------------- Data ----------------
 data:
-  path: data/images/CAM_FRONT    # Path to nuScenese Images (Front View)
-  image_size: 336
-  max_images: 128               # null = all keyframes (404 in mini); N = first N after stride
-  stride: 1                      # take every Nth frame; >1 spreads the sample across scenes
+  path: data/images/CAM_FRONT    # Path to nuScenes Images (Front View)
+  image_size: 336                # Size the images will be resized to
+  max_images: 128                # Maximum # of images in a run
+  stride: 1                      # Step size
 
 # ---------------- Correctness ----------------
-parity:
-  golden_path: golden/vitl14_336_fp32_cpu.npz
-  threshold: 0.999         # min cosine similarity vs golden to accept a run
+parity:                                           
+  golden_path: golden/vitl14_336_fp32_cpu.npz    # TBD
+  threshold: 0.999                               # min cosine similarity vs golden to accept a run
 
 # ---------------- Hardware ----------------
 hardware:
   tegrastats_interval_ms: 100
-
-# ---------------- Output ----------------
-output:
-  results_dir: results
