@@ -1,92 +1,80 @@
-import csv
+"""CPU baseline: wall-clock stage timing with time.perf_counter.
+
+This is the reference target and the one that produces the golden parity
+tensor, so it stays simple and measures in-process -- no external profiler
+needed to get a CSV.
+
+It syncs at every stage boundary. On CPU there is nothing to drain, so that
+costs a function call. On an accelerator the same pattern would serialise the
+pipeline and destroy the CPU/GPU overlap you actually ship with, which is why
+clipbench/targets/nvidia.py deliberately does not do it.
+"""
+
+import statistics
 import time
-from datetime import datetime
-from pathlib import Path
-import torch
+from contextlib import contextmanager
 
-EVENTS = []  # (batch_size, iteration, label, t_ns)
+from ..reports.schema import make_row, percentile, stage_sort_key
+from .base import Target
 
-## Stage boundaries recorded per iteration; durations are the gaps between them
-STAGES = ('iter_start', 'decode', 'preprocess', 'encode', 'project')
 
-def reset():
-    EVENTS.clear()
+class CpuTarget(Target):
+    name = 'cpu'
+    reports_in_process = True
 
-def sync(device):
-    if torch.device(device).type == 'cuda':
-        torch.cuda.synchronize()
+    def __init__(self, config):
+        super().__init__(config)
+        self._spans = {}        # (batch_size, stage) -> [duration_ms, ...]
 
-def mark(batch_size, iteration, label, device):
-    sync(device)
-    EVENTS.append((batch_size, iteration, label, time.perf_counter_ns()))
+    @contextmanager
+    def _span(self, batch_size, stage):
+        self.sync()
+        start = time.perf_counter_ns()
+        try:
+            yield
+        finally:
+            self.sync()
+            elapsed_ms = (time.perf_counter_ns() - start) / 1e6
+            self._spans.setdefault((batch_size, stage), []).append(elapsed_ms)
 
-## Per-iteration stage durations (ms) for one sub-test; incomplete iterations are dropped
-def iteration_spans(batch_size):
-    per_iter = {}
-    for bs, iteration, label, t_ns in EVENTS:
-        if bs == batch_size:
-            per_iter.setdefault(iteration, {})[label] = t_ns
+    @contextmanager
+    def subtest(self, batch_size):
+        with self._span(batch_size, 'subtest'):
+            yield
 
-    spans = []
-    for iteration in sorted(per_iter):
-        marks = per_iter[iteration]
-        if not all(label in marks for label in STAGES):
-            continue
-        spans.append({
-            stage: (marks[stage] - marks[prev]) / 1e6
-            for prev, stage in zip(STAGES, STAGES[1:])
-        })
-    return spans
+    @contextmanager
+    def iteration(self, batch_size, index):
+        with self._span(batch_size, 'iter'):
+            yield
 
-## Rolls one sub-test's iterations up into mean stage latency and throughput
-def summarize(batch_size, images):
-    spans = iteration_spans(batch_size)
-    if not spans:
-        return None
+    @contextmanager
+    def stage(self, name, batch_size):
+        with self._span(batch_size, name):
+            yield
 
-    wall_ms = sum(sum(span.values()) for span in spans)
-    return {
-        'batch_size': batch_size,
-        'images': images,
-        'batches': len(spans),
-        'mean_batch_ms': wall_ms / len(spans),
-        'images_per_s': images / (wall_ms / 1000) if wall_ms else float('nan'),
-        'stage_mean_ms': {
-            stage: sum(span[stage] for span in spans) / len(spans)
-            for stage in STAGES[1:]
-        },
-    }
+    def rows(self, images_by_batch_size):
+        rows = []
+        for (batch_size, stage), spans in self._spans.items():
+            ## Throughput is only meaningful against the whole sub-test; a
+            ## per-stage figure would read as though the other stages were free
+            images_per_s = ''
+            if stage == 'subtest':
+                total_s = sum(spans) / 1000
+                if total_s:
+                    images_per_s = round(images_by_batch_size.get(batch_size, 0) / total_s, 3)
 
-def _stamped(results_dir, prefix):
-    stamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-    return Path(results_dir) / f'{prefix}_{stamp}.csv'
+            rows.append(make_row(
+                platform=self.name,
+                device=self.device,
+                precision=self.run['precision'],
+                batch_size=batch_size,
+                stage=stage,
+                n=len(spans),
+                mean_ms=round(statistics.fmean(spans), 3),
+                median_ms=round(statistics.median(spans), 3),
+                p95_ms=round(percentile(spans, 0.95), 3),
+                images_per_s=images_per_s,
+            ))
 
-def _writer(path, header):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, 'w', newline='')
-    w = csv.writer(f)
-    w.writerow(header)
-    return f, w
-
-## Raw marks for every sub-test in the sweep
-def dump(path=None, results_dir='results'):
-    path = Path(path) if path is not None else _stamped(results_dir, 'trace')
-    f, w = _writer(path, ['batch_size', 'iteration', 'label', 't_ns'])
-    with f:
-        w.writerows(EVENTS)
-    return path
-
-## One row per sub-test
-def dump_summary(summaries, path=None, results_dir='results'):
-    path = Path(path) if path is not None else _stamped(results_dir, 'summary')
-    header = ['batch_size', 'images', 'batches', 'mean_batch_ms', 'images_per_s']
-    header += [f'{stage}_ms' for stage in STAGES[1:]]
-
-    f, w = _writer(path, header)
-    with f:
-        for s in summaries:
-            row = [s['batch_size'], s['images'], s['batches'],
-                   round(s['mean_batch_ms'], 3), round(s['images_per_s'], 3)]
-            row += [round(s['stage_mean_ms'][stage], 3) for stage in STAGES[1:]]
-            w.writerow(row)
-    return path
+        rows.sort(key=stage_sort_key)
+        return rows

@@ -5,3 +5,9 @@ __pycache__/
 .pytest_cache/
 models/
 data/
+results/
+*.egg-info/
+
+# Nsight Systems captures and their sqlite exports
+*.nsys-rep
+*.sqlite
