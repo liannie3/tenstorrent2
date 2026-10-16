@@ -1,5 +1,12 @@
-"""Model definitions. Shared by every target; the sweep loop lives in runner.py.
+# ======================================= #
+# AUTHOR:          Travis Mora
+# ORGANIZATION:    Texas A&M University
+# FILE:            model.py
+# CREATED:         10/15/2026
+# REVISION:        1.0
+# ======================================= #
 
+"""Model definitions.
 Nothing here knows what hardware it is on -- device placement goes through the
 target so that CPU, Jetson and anything added later build the same graph.
 """
