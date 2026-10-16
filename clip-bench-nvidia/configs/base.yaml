@@ -22,7 +22,7 @@ model:
 
 # ---------------- Run ----------------
 run:
-  batch_sizes: [1, 2, 4, 8]  # one sub-test per batch size (testing performance against different batch sizes)
+  batch_sizes: [1]  # one sub-test per batch size (testing performance against different batch sizes)
   max_batches: null          # null = run all batches; N = stop after N batches (per sub-test)
   seed: 0
   warmup_iters: 20
