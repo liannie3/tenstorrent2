@@ -1,0 +1,17 @@
+# ======================================= #
+# AUTHOR:          Travis Mora
+# ORGANIZATION:    Texas A&M University
+# FILE:            cpu.yaml
+# CREATED:         10/15/2026
+# REVISION:        1.0
+# ======================================= #
+
+## YAML file for Jetson AGX Orin
+
+run:
+  target: nvidia                 # clipbench/targets/nvidia.py -- NVTX ranges, asynchronous
+  device: cuda                   
+  precision: fp16                # data type
+
+output:
+  results_dir: results/jetson    # directory for result data

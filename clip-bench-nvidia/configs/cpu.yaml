@@ -1,0 +1,17 @@
+# ======================================= #
+# AUTHOR:          Travis Mora
+# ORGANIZATION:    Texas A&M University
+# FILE:            cpu.yaml
+# CREATED:         10/15/2026
+# REVISION:        1.0
+# ======================================= #
+
+## YAML File for CPU Development and Testing
+
+run:
+  target: cpu                   # clipbench/targets/cpu.py -- perf_counter stage spans
+  device: cpu                 
+  precision: fp32               # data type
+   
+output:   
+  results_dir: results/cpu      # directory for result data
