@@ -23,7 +23,7 @@ import transformers
 from . import config as cfg
 from . import data
 from . import model as model_lib
-from .reports.schema import print_table, write_csv
+from .reports.schema import write_stage_csvs
 from .targets import get_target
 
 
@@ -153,9 +153,8 @@ def main(argv=None):
         print(f'       python -m clipbench.runner --profile {config["profile"]}')
         return 0
 
-    rows = target.rows(images_by_batch_size)
-    print('stages  :', write_csv(rows, results_dir / 'stages.csv'), '\n')
-    print_table(rows)
+    for stage, path in write_stage_csvs(target.samples(), results_dir).items():
+        print(f'{stage:>10}:', path)
     return 0
 
 

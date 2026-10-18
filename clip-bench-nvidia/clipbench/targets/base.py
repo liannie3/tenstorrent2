@@ -17,8 +17,8 @@ class Target:
     name = 'base'
 
     ## False when durations only exist inside an external profiler's capture.
-    ## The runner uses this to decide between writing a CSV and pointing you at
-    ## a report reader.
+    ## The runner uses this to decide between writing the per-stage CSVs and
+    ## pointing you at a report reader.
     reports_in_process = True
 
     def __init__(self, config):
@@ -54,7 +54,8 @@ class Target:
     def stage(self, name, batch_size):
         yield
 
-    ## Canonical rows (see clipbench.reports.schema), or None when an external
-    ## profiler holds the timings and a reader has to produce them instead
-    def rows(self, images_by_batch_size):
+    ## Raw spans, {(batch_size, stage): [duration_ms, ...]} in measurement
+    ## order, or None when an external profiler holds the timings and a reader
+    ## has to produce them instead
+    def samples(self):
         return None

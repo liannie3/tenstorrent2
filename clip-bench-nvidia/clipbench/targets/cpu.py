@@ -10,11 +10,9 @@ pipeline and destroy the CPU/GPU overlap you actually ship with, which is why
 clipbench/targets/nvidia.py deliberately does not do it.
 """
 
-import statistics
 import time
 from contextlib import contextmanager
 
-from ..reports.schema import make_row, percentile, stage_sort_key
 from .base import Target
 
 
@@ -52,29 +50,5 @@ class CpuTarget(Target):
         with self._span(batch_size, name):
             yield
 
-    def rows(self, images_by_batch_size):
-        rows = []
-        for (batch_size, stage), spans in self._spans.items():
-            ## Throughput is only meaningful against the whole sub-test; a
-            ## per-stage figure would read as though the other stages were free
-            images_per_s = ''
-            if stage == 'subtest':
-                total_s = sum(spans) / 1000
-                if total_s:
-                    images_per_s = round(images_by_batch_size.get(batch_size, 0) / total_s, 3)
-
-            rows.append(make_row(
-                platform=self.name,
-                device=self.device,
-                precision=self.run['precision'],
-                batch_size=batch_size,
-                stage=stage,
-                n=len(spans),
-                mean_ms=round(statistics.fmean(spans), 3),
-                median_ms=round(statistics.median(spans), 3),
-                p95_ms=round(percentile(spans, 0.95), 3),
-                images_per_s=images_per_s,
-            ))
-
-        rows.sort(key=stage_sort_key)
-        return rows
+    def samples(self):
+        return self._spans
