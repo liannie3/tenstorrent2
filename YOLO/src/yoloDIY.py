@@ -22,14 +22,19 @@ import torchvision #forces ultralytics' NMS to use torchvision's GPU based NMS
 
 #store timing results
 import csv
+import shutil #detecting correct hardware monitor
 CSV_FIELDS = ["timestamp", "script", "pass", "device", "batch_size", "num_images", "stage", "step", "ms"] #indicates fields to be saved in each row of csv dictionary
 CSV_PATH = Path(__file__).parent.parent / "benchmarking" / "stage_timings.csv" #computes path relative from the file to the folder containing it twice then to csv path 
-HARDWARE_FIELDS = ["phase", "start", "end"]
+HARDWARE_FIELDS = ["monitor", "phase", "start", "end"]
+STAGE_FIELDS = ["monitor", "stage", "start", "end", "iterations"]
 #store hardware results (NOTE: tegrastats NOT nsys)
 HARDWARE_METRICS = False #indicates hardware testing and no need for latency during run_pipeline
 #TODO: repalce boolean control lobic for which type of run we are in with MODE logic
 HARDWARE_LOG = CSV_PATH.parent / "tegrastats.log"
 HARDWARE_PATH = CSV_PATH.parent / "hw_metrics.csv"
+HARDWARE_STAGES_PATH = CSV_PATH.parent / "hw_stages.csv"
+hw_window = {}
+PHASE_LIMIT = 5.0 #indicates substages will only run 5 seconds during substage hardware testing
 
 #NOTE: runs on CPU                                   
 from ultralytics.utils.ops import scale_boxes #ultralyitics utility function that rescales bounding boxes from one image to another
@@ -219,7 +224,7 @@ def inference_stage(model, im, device = 'cuda:0'):
     #                  occurs in layer 22
     with timed(store, "C_head", device):
         x = run_layers(model, model.model[NECK_BOUNDARY+1:], x, y) #runs HEAD layer only
-    return x
+    return x #returns tuple of y (inferenced tensor), preds (dictionary of head layer's raw input)
 
 ########################################################################################################################################################################
 #                         | | | |
@@ -252,36 +257,93 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
             if len(pred):
                 pred[:, :4] = scale_boxes(im.shape[2:], pred[:, :4], shape) #maps coordinates back from 640x640 space to the original image shape
 
-    return filtered_preds #returns the list of result objects containing the post processed predition
+    return filtered_preds #returns the list of result objects containing the post processed prediction
+
 ########################################################################################################################################################################
+
+#starts the hardware monitor in the background, sets the hardware flags, and always cleans both up
+@contextmanager
+def hw_monitor():
+    global SUBSTEP_TIMING; SUBSTEP_TIMING = False
+    global HARDWARE_METRICS; HARDWARE_METRICS = True
+    name = None #distinguishes which hw monitoring is being used
+    cmd = None #which command is used to start hw monitoring
+    #chooses which hw monitor is used for hw runs
+    if shutil.which("tegrastats"): #Jetson
+        name = "tegrastats"
+        cmd = ["tegrastats", "--interval", "100"]
+    elif shutil.which("nvidia-smi"): #Desktop with nvidia GPU
+                                        #TODO: change to TT gpu's hw_monitor
+        name = "nvidia_smi"
+        cmd =  ["nvidia-smi",
+                "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw,clocks.sm,temperature.gpu",
+                "--format=csv,noheader", "-lms", "100"] #one csv line every 100 ms        
+                
+    CSV_PATH.parent.mkdir(parents = True, exist_ok = True) #create benchmarking/ folder if missing
+    log_path = CSV_PATH.parent / f"{name}.log" #tegrastats.log or nvidia_smi.log
+
+    with open(log_path, "a") as log:
+        proc = subprocess.Popen(cmd, stdout = log, stderr = subprocess.STDOUT)
+        try:
+            time.sleep(1) #let the monitor start
+            yield name
+        finally: #runs even if the pass crashes
+            proc.terminate()
+            proc.wait()
+            HARDWARE_METRICS = False
 
 @torch.inference_mode()
 def hardware_run_pipeline(model, img_paths, batch_size : int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
-    global SUBSTEP_TIMING; global HARDWARE_METRICS
-    SUBSTEP_TIMING = False #some substeps are too short to be polled
-                           #TODO: cover substep hardware information during nsys profiling
-    HARDWARE_METRICS = True #indicate we are collecting hardware metrics
-    HARDWARE_METRICS.parent.mkdir(parents = True, exist_ok = True) #create benchmarking/ folder if missing
-    log = open(HARDWARE_LOG, 'a') #open to append tegrastats log
-    tegrastats_process = subprocess.run(["tegrastats", "--interval", "100"], stdout = log, stderr = subprocess.STDOUT) #runs tegrastat to collect metrics
-    #TODO: might need to fine tune the arguments and flags passed to tegrastats depending on desired metrics
-    try:
+    with hw_monitor() as monitor:
         run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
-    finally: #will run regardless of what occurs in try
-        tegrastats_process.terminate() #end the subprocess
-        log.close()
-        HARDWARE_METRICS = False #indicate we are finished measuring hardware metrics for subsequent runs
-    new_file = not HARDWARE_METRICS.exists() #indicates if we need to make a new file 
-    with open(HARDWARE_METRICS, 'a', newline = '') as csvfile:
+
+    new_file = not HARDWARE_PATH.exists() #indicates if we need to make a new file 
+    with open(HARDWARE_PATH, "a", newline = "") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames = HARDWARE_FIELDS) #used for writing saved dictionary into csv
         if new_file:
             writer.writeheader()
-        writer.writerow({"phase": "full_pipeline", "start": hw_window["start"], "end": hw_window["end"]})
-
+        writer.writerow({"monitor": monitor, "phase": "full_pipeline", "start": hw_window["start"], "end": hw_window["end"]})
 
 @torch.inference_mode()
-def hardware_profile_stages():
+def hardware_substages(model, images, device = DEVICE, fp16 = FP16):
+    #prepare each stages inputs before metrics are gathered
+    sample = images[:25]
+    ims, shapes = preprocess_stage(sample,device,fp16)
+    preds = inference_stage(model, ims, device)[0] #grabs the tensor portion of inference output
 
+    #lookup table to invoke each substage (and an idle for baseline) independently
+    substages = {
+        "idle": lambda i: time.sleep(0.01),
+        "pre_processing": lambda i: preprocess_stage(sample[i:i+1], device, fp16),
+        "inference": lambda i: inference_stage(model, ims[i:i+1], device),
+        "post_processing": lambda i: postprocess_stage(preds[i:i+1], ims[i:i+1], shapes[i:i+1], CONF_THRES, IOU_THRESH, device),
+    }
+
+    CSV_PATH.parent.mkdir(parents = True, exist_ok = True) #create benchmarking/ folder if missing
+    runs = []
+    with hw_monitor() as monitor:
+        for name, substage_func in substages.items(): #grab each substage from the lookup tablew
+            if torch.device(device).type == "cuda": #force cpu to wait for gpu work before runs commence
+                torch.cuda.synchronize()
+            t_start = time.time()
+            n = 0 #reset to only track iterations within a run
+            while (time.time() - t_start) < PHASE_LIMIT: #run the substage under a time limit
+                substage_func(n % len(sample) ) #iterate through sample images
+                n+=1 
+            if torch.device(device).type == "cuda": #force cpu to wait for gpu work after runs finish
+                torch.cuda.synchronize()
+            t_end = time.time()
+            runs.append({"monitor": monitor,"stage": name, "start" : t_start, "end" : t_end, "iterations" : n})
+            print(f"{name:<16} {n} runs, {(t_end - t_start) / n * 1000:.2f} ms per run")
+            time.sleep(1) #further discretize phases of substage testing
+
+    new_file = not HARDWARE_STAGES_PATH.exists() #chekc if file needs to be created
+    with open(HARDWARE_STAGES_PATH, "a", newline = "") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames = STAGE_FIELDS) #used for writing saved dictionary into csv
+        if new_file:
+            writer.writeheader()
+        writer.writerows(runs) #writerows not writerow
+        
 @torch.inference_mode() #indicates not training, for realistic performance
 #based on benchmark class from ultralytics/engine/predictor.py
 #runs each stage of the pipeline 
@@ -324,6 +386,7 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
     #      then asynchronously meassure time on GPU/CPU and display/record both for extra context
     #      NOTE: _sync does nothing when substep_timing is false
     stage_wall_timings = {s : [] for s in STAGES} #wall clock time to be hollistically measured like ultralytics does NOTE: only valid during sync runs
+    hw_window["start"] = time.time()
     for imgs in loaded:
         _sync(device) #isolates work between stages like accelerator.synchronize does in ultralytics profile
         t0 = time.perf_counter()
@@ -340,6 +403,7 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
             for s, dt in zip(STAGES, (t1-t0, t2-t1, t3-t2) ):
                 stage_wall_timings[s].append(dt * 1000)
         num_images += len(imgs) #keep track of number of images 
+    hw_window["end"] = time.time()
     process_timings()
     
     #print results of runs
@@ -369,7 +433,7 @@ def main(img_dir):
     formats  ={".jpg", ".jpeg", ".png"} #TODO: might want to add more acceptable file formats
     img_paths = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in formats) #grab file paths of only valid file types
 
-    global SUBSTEP_TIMING #initially false
+    global SUBSTEP_TIMING; SUBSTEP_TIMING = False #initially false
     print("   PASS 1: stage wall times only (synchronous profiling)   ")
     results = run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
 
@@ -377,12 +441,15 @@ def main(img_dir):
     print("   PASS 2: substep times (async with slight overhead from substep timers)   ")
     results = run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
 
-    HARDWARE_METRICS = True 
-    print("  PASS 3: hardware metrics (full pipeline)")
-    results = hardware_run_pipeline(model, img_paths, BATCH_SIZE, DEVICE, fp16)
+    if shutil.which("tegrastats") or shutil.which("nvidia-smi"):
+        print("  PASS 3: hardware metrics (full pipeline)")
+        hardware_run_pipeline(model, img_paths * 5, BATCH_SIZE, DEVICE, fp16)
 
-    print("  PASS 4: stage based hardware metrics (average of each pipeline stage)")
-    results = hardware_profile_stages()
+        print("  PASS 4: stage based hardware metrics (average of each pipeline stage)")
+        images = [img for img in (cv2.imread(str(p)) for p in img_paths) if img is not None]
+        hardware_substages(model, images, DEVICE, fp16)
+    else:
+        print("  No hardware monitoring software found, skipping hardware benchmarking stages.")
     return results
 
 if __name__ == "__main__":
