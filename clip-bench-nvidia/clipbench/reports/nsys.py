@@ -6,10 +6,10 @@
 # REVISION:        1.0
 # ======================================= #
 
-"""NVTX ranges in an nsys capture -> the same per-stage CSVs the CPU target writes.
+"""NVTX ranges in an nsys capture -> the same per-stage CSVs run_cpu.py writes.
 
     nsys profile --trace=cuda,nvtx,osrt --output results/jetson/sweep \
-         python -m clipbench.runner --profile jetson
+         python -m clipbench.run_nvidia --profile jetson
 
     python -m clipbench.reports.nsys results/jetson/sweep.nsys-rep
 """
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .schema import write_stage_csvs
 
-## Must stay in step with range_name() in clipbench/targets/nvidia.py
+## Must stay in step with push() in clipbench/run_nvidia.py
 RANGE_PATTERN = re.compile(r'^(?P<stage>\w+)/bs=(?P<batch_size>\d+)$')
 
 ## One row per range instance, not per range name. Report names vary between
@@ -63,15 +63,23 @@ def parse_ranges(csv_path):
     reader = csv.DictReader(lines[header:])
     duration_col = next(c for c in reader.fieldnames if c.startswith('Duration'))
 
-    spans = {}
+    ## Same (batch_size, stage, iter, duration_ms) rows a runner buffers.
+    ## The range name has no iteration index in it on purpose, so the index is
+    ## the position within its (batch size, stage) group -- which works because
+    ## nsys lists push/pop ranges in start order.
+    counts = {}
+    timings = []
     for row in reader:
         match = RANGE_PATTERN.match(row['Name'])
         if not match:
             continue
-        key = (int(match['batch_size']), match['stage'])
-        spans.setdefault(key, []).append(float(row[duration_col]) / 1e6)
+        stage = match['stage']
+        batch_size = int(match['batch_size'])
+        index = counts.get((batch_size, stage), 0)
+        counts[(batch_size, stage)] = index + 1
+        timings.append((batch_size, stage, index, float(row[duration_col]) / 1e6))
 
-    return spans
+    return timings
 
 
 def main(argv=None):
@@ -84,12 +92,26 @@ def main(argv=None):
     csv_path = export_ranges(args.capture, args.report)
     print('nvtx export:', csv_path)
 
-    spans = parse_ranges(csv_path)
-    if not spans:
+    timings = parse_ranges(csv_path)
+    if not timings:
         raise SystemExit(f'no ranges matching {RANGE_PATTERN.pattern} - was --trace=nvtx set?')
 
-    for stage, path in write_stage_csvs(spans, Path(args.capture).parent).items():
+    ## A subdirectory, not the capture's own folder: run_nvidia.py already wrote
+    ## decode.csv, encode.csv and the rest there from its CUDA events, and those
+    ## came from a run with no profiler attached. Writing on top of them would
+    ## replace clean numbers with ones that carry CUPTI overhead.
+    out_dir = Path(args.capture).parent / 'nsys'
+    for stage, path in write_stage_csvs(timings, out_dir).items():
         print(f'{stage:>10}:', path)
+
+    ## The ranges are host-side: nvtx_pushpop_trace records when the CPU thread
+    ## pushed and popped, and a CUDA launch returns before the GPU runs it. So
+    ## encode and project here are launch times, not GPU times -- the event
+    ## numbers in the parent directory are the ones to quote. These rows are
+    ## for seeing where host time goes and for lining up with the kernel
+    ## timeline in the nsys GUI.
+    print('\nthese rows are host-side range durations, not GPU time.')
+    print('for GPU time per stage use the event CSVs written by run_nvidia.py.')
     return 0
 
 

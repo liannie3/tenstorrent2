@@ -33,9 +33,9 @@ def iter_batches(paths, batch_size):
 def load_images(paths):
     return [Image.open(path).convert('RGB') for path in paths]
 
-## Preprocess stage: resize -> center crop -> normalize -> NCHW tensor on the target.
+## Preprocess stage: resize -> center crop -> normalize -> NCHW tensor on device.
 ## nuScenes frames are 1600x900, so the shortest-edge resize gives 597x336 and the
 ## 336x336 center crop keeps only the middle ~56% of the horizontal field of view.
-def preprocess(processor, images, target, dtype):
+def preprocess(processor, images, device, dtype):
     batch = processor(images=images, return_tensors='pt')
-    return target.to_device(batch['pixel_values'], dtype)
+    return batch['pixel_values'].to(device=device, dtype=dtype)

@@ -7,8 +7,8 @@
 # ======================================= #
 
 """Model definitions.
-Nothing here knows what hardware it is on -- device placement goes through the
-target so that CPU, Jetson and anything added later build the same graph.
+Device and precision come straight out of the config, so both runners build the
+same graph and the only thing that differs between them is how it gets timed.
 """
 
 import torch
@@ -46,12 +46,12 @@ def load_processor(config):
 
 
 ## CLIP encoder, frozen
-def load_encoder(config, target):
+def load_encoder(config):
     model = CLIPVisionModel.from_pretrained(
         config['model']['name'],
         dtype=resolve_dtype(config['run']['precision']),
     )
-    model = target.prepare(model)
+    model = model.to(config['run']['device'])
     model.eval()
     model.requires_grad_(False)
     return model
@@ -68,11 +68,11 @@ class MLPProjector(nn.Module):
         return self.fc2(self.act(self.fc1(image_features)))
 
 
-def load_projector(config, target, in_dim):
+def load_projector(config, in_dim):
     run = config['run']
     torch.manual_seed(run['seed'])
     projector = MLPProjector(in_dim, config['model']['projector_out_dim'])
-    projector = target.prepare(projector, dtype=resolve_dtype(run['precision']))
+    projector = projector.to(device=run['device'], dtype=resolve_dtype(run['precision']))
     projector.eval()
     projector.requires_grad_(False)
     return projector

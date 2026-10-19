@@ -9,7 +9,7 @@
 ## YAML File for CPU Development and Testing
 
 run:
-  target: cpu                   # clipbench/targets/cpu.py -- perf_counter stage spans
+  target: cpu                   # run with clipbench/run_cpu.py -- perf_counter stage timing
   device: cpu                 
   precision: fp32               # data type
    

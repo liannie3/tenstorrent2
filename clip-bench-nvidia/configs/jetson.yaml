@@ -1,7 +1,7 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            cpu.yaml
+# FILE:            jetson.yaml
 # CREATED:         10/15/2026
 # REVISION:        1.0
 # ======================================= #
@@ -9,7 +9,7 @@
 ## YAML file for Jetson AGX Orin
 
 run:
-  target: nvidia                 # clipbench/targets/nvidia.py -- NVTX ranges, asynchronous
+  target: nvidia                 # run with clipbench/run_nvidia.py -- CUDA event stage timing
   device: cuda                   
   precision: fp16                # data type
 

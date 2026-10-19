@@ -18,22 +18,22 @@ model:
   projector_out_dim: 2048                   # Output dimension to TinyLlama
 
 
-  image_processor: pil     # pil | torchvision
+  image_processor: pil                      # pil | torchvision
 
 # ---------------- Run ----------------
 run:
-  batch_sizes: [1]  # one sub-test per batch size (testing performance against different batch sizes)
-  max_batches: null          # null = run all batches; N = stop after N batches (per sub-test)
+  batch_sizes: [1]                          # one sub-test per batch size (testing performance against different batch sizes)
+  max_batches: null                         # null = run all batches; N = stop after N batches (per sub-test)
   seed: 0
   warmup_iters: 20
   timed_iters: 200
 
 # ---------------- Data ----------------
 data:
-  path: data/images/CAM_FRONT    # Path to nuScenes Images (Front View)
-  image_size: 336                # Size the images will be resized to
-  max_images: 128                # Maximum # of images in a run
-  stride: 1                      # Step size
+  path: data/images/CAM_FRONT               # Path to nuScenes Images (Front View)
+  image_size: 336                           # Size the images will be resized to
+  max_images: 128                           # Maximum # of images in a run
+  stride: 1                                 # Step size
 
 # ---------------- Correctness ----------------
 parity:                                           
