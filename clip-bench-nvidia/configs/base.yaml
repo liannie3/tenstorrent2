@@ -39,7 +39,3 @@ data:
 parity:                                           
   golden_path: golden/vitl14_336_fp32_cpu.npz    # TBD
   threshold: 0.999                               # min cosine similarity vs golden to accept a run
-
-# ---------------- Hardware ----------------
-hardware:
-  tegrastats_interval_ms: 100

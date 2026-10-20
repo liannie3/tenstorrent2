@@ -28,19 +28,16 @@ synchronize -- by which point every event has completed, so the read does not
 block either. Host-bound stages (decode, preprocess) stay on perf_counter
 because they do no GPU work for an event to time.
 
-The NVTX ranges are still here but they no longer carry the measurements. They
-cost a few hundred nanoseconds when no profiler is attached, and they are what
-makes an occasional nsys capture readable when the question is *why* a stage is
-slow (kernel breakdown, memcpy visibility, overlap on a visual timeline):
+The NVTX ranges carry no measurements -- they are inert until a profiler
+collects them. So by default this runner relaunches itself once under
+`nsys profile` and merges the ranges into the stage CSVs as an nvtx_ms column,
+leaving the .nsys-rep beside them for the Nsight Systems GUI. --no-nsys skips
+all of that and runs in-process.
 
-    nsys profile --trace=cuda,nvtx,osrt --output results/jetson/sweep \
-         python -m clipbench.run_nvidia --profile jetson
+    python -m clipbench.run_nvidia --profile jetson --no-nsys
 
-    python -m clipbench.reports.nsys results/jetson/sweep.nsys-rep
-
-That writes its own CSVs into a nsys/ subdirectory so it never overwrites the
-event timings from this file. Note that a profiled run carries CUPTI overhead
-on every kernel launch, so quote the unprofiled run for headline numbers.
+A profiled run carries CUPTI overhead on every kernel launch, so use --no-nsys
+for headline numbers.
 
 Range names carry the batch size but deliberately NOT the iteration index.
 `nsys stats --report nvtx_sum` groups by name, so 'encode/bs=4' stays one row
@@ -49,6 +46,9 @@ make every range unique and defeat the aggregation.
 """
 
 import argparse
+import os
+import subprocess
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -59,7 +59,9 @@ from torch.cuda import nvtx
 from . import config as cfg
 from . import data
 from . import model as model_lib
-from .reports.schema import write_manifest, write_stage_csvs
+from .reports import nsys as nsys_report
+from .reports.schema_nvidia import (NSYS_ENV_GUARD, merge_nvtx_column,
+                                    under_nsys, write_manifest, write_stage_csvs)
 
 
 ## Function checks to make sure NVTX is available
@@ -88,84 +90,75 @@ def pop():
 
 
 ## One sub-test: the whole image set at a single batch size.
-##
-## Returns how many images ran and the wall-clock window the sub-test occupied.
-## The window is what lets a tegrastats log be sliced per batch size -- see
-## the note in main().
 def run_subtest(config, encoder, processor, projector, paths, batch_size, timings):
-    device = config['run']['device']
-    dtype = model_lib.resolve_dtype(config['run']['precision'])
-    max_batches = config['run'].get('max_batches')
-    images_seen = 0
-    batches_run = 0
 
-    ## The events have to exist before the loop starts, so the batch count is
-    ## worked out up front rather than discovered by iterating. Creating them
-    ## here also keeps cudaEventCreate out of the timed region.
-    num_batches = (len(paths) + batch_size - 1) // batch_size
+    ## Loads parameters which are initialized in the cpu.yaml file
+    device = config['run']['device']                               # config['run']['device'] returns cuda    
+    dtype = model_lib.resolve_dtype(config['run']['precision'])    # Goes to model.py and makes sure config dtype is allowed
+    max_batches = config['run'].get('max_batches')                 # Sets the maximum batches
+    images_seen = 0                                                # Image counter
+    batches_run = 0                                                # Batches counter
+
+    ## To use cudaEvents, we must set the flags prior to running the program
+    ## Set before the loop starts
+    num_batches = (len(paths) + batch_size - 1) // batch_size                   # Make sure to keep batches in power of 2 (1, 2, 4, 8, 16, ...)
     if max_batches is not None:
-        num_batches = min(num_batches, max_batches)
+        num_batches = min(num_batches, max_batches)                             # Resolves if a batch size is like a 5 or and odd number not listed above
 
-    ## One (start, end) pair per iteration per GPU stage. enable_timing=True is
-    ## what makes elapsed_time() legal on them later.
+    ## cudaEvents setup
     encode_events = []
     project_events = []
-    for i in range(num_batches):
-        encode_events.append((torch.cuda.Event(enable_timing=True),
-                              torch.cuda.Event(enable_timing=True)))
-        project_events.append((torch.cuda.Event(enable_timing=True),
+    for i in range(num_batches):                                                # Loop over number of batches
+        encode_events.append((torch.cuda.Event(enable_timing=True),             # Tuple of the start and end of encode events (t0, t1) B total (Number of batches)
+                              torch.cuda.Event(enable_timing=True)))            
+        project_events.append((torch.cuda.Event(enable_timing=True),            # Tuple of the start and end of decode events (t0, t1) B total (Number of batches)
                                torch.cuda.Event(enable_timing=True)))
 
     ## decode + preprocess per iteration, kept so the 'iter' row can be put
     ## together after the GPU numbers come back
     host_iter_ms = []
 
-    push('subtest', batch_size)
-    subtest_start_unix = time.time()            # for lining up with tegrastats
-    subtest_start = time.perf_counter_ns()      # for the duration itself
+    push('subtest', batch_size)                       # Subtest: NVTX Push
+    subtest_start = time.perf_counter_ns()
 
-    ## inference_mode wraps the whole sub-test because nothing here ever trains
+    ## i is the batch index and the index into the event pairs above; the break
+    ## enforces max_batches, which iter_batches knows nothing about.
+    ## 100 images at bs=8 -> 13 batches, so i runs 0..12 (last batch has 4).
     with torch.inference_mode():
         for i, batch_paths in enumerate(data.iter_batches(paths, batch_size)):
             if i >= num_batches:
                 break
 
-            push('iter', batch_size)
+            push('iter', batch_size)                  # Iter: NVTX Push
 
-            ## Pure CPU work -- file read plus JPEG decode in PIL -- so a host
-            ## clock reads it correctly
-            t0 = time.perf_counter_ns()
-            push('decode', batch_size)
-            images = data.load_images(batch_paths)
-            pop()
+            ## Decode [CPU]
+            t0 = time.perf_counter_ns()               # Decode: Perf_Counter
+            push('decode', batch_size)                # Decode: NVTX Push
+            images = data.load_images(batch_paths)    # Return: Returns a list of the path and pixel data of images
+            pop()                                     # Decode: NVTX Pop
 
-            ## Host work too, ending in the H2D copy inside data.preprocess.
-            ## That copy is from pageable memory, and CUDA syncs the stream
-            ## before a pageable copy starts, so this stage quietly absorbs the
-            ## previous iteration's GPU tail. The number is real but it is not
-            ## purely preprocessing -- see the footnote at the end of the file.
-            t1 = time.perf_counter_ns()
-            push('preprocess', batch_size)
-            pixel_values = data.preprocess(processor, images, device, dtype)
-            pop()
-            t2 = time.perf_counter_ns()
+            ## Preprocessing [CPU]
+            t1 = time.perf_counter_ns()                                       # Decode & Preprocessing: Perf_counter
+            push('preprocess', batch_size)                                    # Preprocessing: NVTX Push
+            pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
+            pop()                                                             # Preprocessing: NVTX Pop
+            t2 = time.perf_counter_ns()                                       # Preprocessing & Encode: Perf_Counter
 
-            ## GPU work. record() queues a timestamp and returns, so the host
-            ## runs straight on into the next stage.
-            push('encode', batch_size)
-            encode_events[i][0].record()
-            outputs = encoder(pixel_values, output_hidden_states=True)
+            ## Encode [GPU]
+            push('encode', batch_size)                                        # Encode: NVTX Push
+            encode_events[i][0].record()                                      # Encode: Record starting time to cudaEvent
+            outputs = encoder(pixel_values, output_hidden_states=True)        
             features = model_lib.select_image_features(outputs, config)
-            encode_events[i][1].record()
-            pop()
+            encode_events[i][1].record()                                      # Encode: Record ending time to cudaEvent
+            pop()                                                             # Encode: NVTX Pop
 
-            push('project', batch_size)
-            project_events[i][0].record()
+            push('project', batch_size)               # Project: NVTX Push
+            project_events[i][0].record()             # Project: Record starting time to cudaEvent
             embeddings = projector(features)
-            project_events[i][1].record()
-            pop()
+            project_events[i][1].record()             # Project: Record ending time to cudaEvent
+            pop()                                     # Project: NVTX Pop
 
-            pop()       # iter
+            pop()       # Iter: NVTX Pop
 
             ## The host stages are known now and go straight into the buffer.
             ## The GPU stages cannot: elapsed_time() on an event that has not
@@ -178,24 +171,22 @@ def run_subtest(config, encoder, processor, projector, paths, batch_size, timing
             images_seen += len(batch_paths)
             batches_run += 1
 
-    ## The only synchronize in the timed region. It sits inside the sub-test
-    ## range so 'subtest' is a true wall-clock envelope including the GPU tail
-    ## -- that envelope is what throughput is computed from. Once per batch
-    ## size, so per-iteration overlap is untouched, and it stops one sub-test's
-    ## trailing kernels landing inside the next sub-test's numbers.
+    ## The only synchronize in the timed region -- once per batch size, not per
+    ## stage, so overlap survives. Draining here pulls the GPU tail into
+    ## 'subtest' (the wall-clock envelope throughput uses) and keeps this
+    ## sub-test's trailing kernels out of the next one's numbers.
     torch.cuda.synchronize()
-    subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6
-    subtest_end_unix = time.time()
-    pop()               # subtest
+    subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6               # Time for the entire subtest     
+    pop()               # Subtest: NVTX Pop
 
-    timings.append((batch_size, 'subtest', 0, subtest_ms))
+    timings.append((batch_size, 'subtest', 0, subtest_ms))                    # Add the subtest times to the list
 
     ## The stream is drained, so every event has completed and these reads
     ## return immediately. elapsed_time() gives milliseconds as a float.
     for i in range(batches_run):
-        encode_ms = encode_events[i][0].elapsed_time(encode_events[i][1])
+        encode_ms = encode_events[i][0].elapsed_time(encode_events[i][1])      # Finds the elapsed time for each of the events (float)
         project_ms = project_events[i][0].elapsed_time(project_events[i][1])
-        timings.append((batch_size, 'encode',  i, encode_ms))
+        timings.append((batch_size, 'encode',  i, encode_ms))                  # Appends them t the timing buffer
         timings.append((batch_size, 'project', i, project_ms))
 
         ## 'iter' here is the sum of the four stages, not a wall-clock reading.
@@ -212,12 +203,67 @@ def run_subtest(config, encoder, processor, projector, paths, batch_size, timing
         print('  features    :', tuple(features.shape))
         print('  projected   :', tuple(embeddings.shape))
 
-    window = {
-        'batch_size': batch_size,
-        'start_unix': subtest_start_unix,
-        'end_unix': subtest_end_unix,
-    }
-    return images_seen, window
+    return images_seen
+
+
+## Relaunch this module under nsys so the NVTX ranges get collected. Returns
+## the .nsys-rep, or None if nsys is not installed.
+def _capture_under_nsys(config, profile):
+
+    ## Gets the results path which is defined in jetson.yaml
+    results_dir = Path(config['output']['results_dir'])
+    results_dir.mkdir(parents=True, exist_ok=True)
+    capture = results_dir / 'sweep'                       # Makes the a folder for the output nsys data
+
+    ## nsys profile <flags> <command>. Everything from sys.executable on is the
+    ## child nsys launches and traces; cwd=PROJECT_ROOT below is what makes
+    ## -m clipbench.run_nvidia importable.
+    cmd = ['nsys', 'profile',
+           '--trace=cuda,nvtx',                           # kernels, memcpys, and our ranges -- nothing else
+           '--sample=none', '--cpuctxsw=none',            # need perf_event access we may not have
+           '--force-overwrite', 'true',                   # else nsys exits nonzero on the second run
+           '--output', str(capture),                      # base path; nsys appends .nsys-rep
+           sys.executable, '-m', 'clipbench.run_nvidia',  # same interpreter and venv as the parent
+           '--profile', profile]                          # --nsys not forwarded; the env guard stops the relaunch
+
+    env = dict(os.environ)                          # Builds the OS the child process will run on
+    env[NSYS_ENV_GUARD] = '1'                       # stops the child relaunching too
+
+    ## Starts child terminal
+    print('capturing NVTX ranges under nsys\n')
+    try:
+        result = subprocess.run(cmd, cwd=cfg.PROJECT_ROOT, env=env)      
+    except FileNotFoundError:
+        warnings.warn('nsys is not on PATH, so there will be no nvtx_ms column. Install '
+                      'Nsight Systems, or pass --no-nsys to stop trying.',
+                      RuntimeWarning, stacklevel=2)
+        return None
+
+    ## Checks if nsys exited
+    if result.returncode != 0:
+        raise SystemExit(f'nsys profile exited {result.returncode}')
+    return capture.with_suffix('.nsys-rep')
+
+
+## Add the captured ranges to the stage CSVs the child just wrote
+def _merge_nvtx(rep_path, results_dir):
+
+    try:
+        csv_path = nsys_report.export_ranges(rep_path)
+        timings = nsys_report.parse_ranges(csv_path)
+    except (FileNotFoundError, RuntimeError) as exc:
+        warnings.warn(f'capture kept at {rep_path}, but its ranges could not be read: '
+                      f'{exc}', RuntimeWarning, stacklevel=2)
+        return
+
+    if not timings:
+        warnings.warn(f'no NVTX ranges in {rep_path}', RuntimeWarning, stacklevel=2)
+        return
+
+    print('\nnvtx_ms merged into:')
+    for stage, path in sorted(merge_nvtx_column(timings, results_dir).items()):
+        print(f'{stage:>10}:', path)
+    print('\ncapture:', rep_path)
 
 
 def main(argv=None):
@@ -225,20 +271,22 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='CLIP encoder + MLP projector sweep, CUDA event timing')
     parser.add_argument('--profile', default='jetson', choices=cfg.available_profiles(),
                         help='config profile from configs/ (default: jetson)')
+    parser.add_argument('--nsys', action=argparse.BooleanOptionalAction, default=True,
+                        help='collect NVTX ranges under nsys (default: on)')
     args = parser.parse_args(argv)
 
     ## 1. Config
     config = cfg.load_config(args.profile)
     run = config['run']
 
+    ## Make sure the run is on an nvidia device
     if run['target'] != 'nvidia':
         raise SystemExit(
             f"profile {args.profile!r} has run.target {run['target']!r} - run it with:\n"
             f'  python -m clipbench.run_cpu --profile {args.profile}'
         )
 
-    ## The GPU stages are timed with CUDA events, so there is no CPU fallback
-    ## path through this file. Refuse rather than crash halfway into a sweep.
+    ## Checks if CUDA is available
     if not torch.cuda.is_available():
         raise SystemExit(
             'run_nvidia.py times the GPU stages with CUDA events and needs a working '
@@ -247,6 +295,7 @@ def main(argv=None):
             '  python -m clipbench.run_cpu --profile cpu'
         )
 
+    ## Checks if NVTX is available
     if not NVTX_AVAILABLE:
         warnings.warn(
             'NVTX is unavailable, so the ranges will be no-ops and an nsys capture of '
@@ -254,6 +303,16 @@ def main(argv=None):
             RuntimeWarning,
             stacklevel=2,
         )
+
+    ## This is where the Parent OS Process gets blocked so the Child OS Process can run the 
+    ## program.
+    ## If nsys is being ran with the program, there may be added latency
+    if args.nsys and NVTX_AVAILABLE and not under_nsys():
+        rep_path = _capture_under_nsys(config, args.profile)
+        if rep_path is not None:
+            _merge_nvtx(rep_path, Path(config['output']['results_dir']))
+            return 0
+        print('running in-process instead\n')
 
     print(f"profile: {config['profile']}  device: {run['device']}  "
           f"precision: {run['precision']}")
@@ -272,16 +331,14 @@ def main(argv=None):
     ## 4. The timing buffer. Appended to all through the sweep below, read once
     ## at step 6 and not before.
     timings = []        # (batch_size, stage, iter, duration_ms)
-    windows = []        # one wall-clock window per sub-test, for tegrastats
 
     ## 5. One sub-test per batch size
     images_by_batch_size = {}
     for batch_size in run['batch_sizes']:
         print(f'\n=== sub-test: batch size {batch_size} over {len(paths)} images ===')
-        images_seen, window = run_subtest(
+        images_seen = run_subtest(
             config, encoder, processor, projector, paths, batch_size, timings)
         images_by_batch_size[batch_size] = images_seen
-        windows.append(window)
         print(f'  images      : {images_seen}')
 
     ## 6. Sweep is over, so now the buffer gets read and the files get written.
@@ -289,23 +346,10 @@ def main(argv=None):
     ## power mode, since DVFS makes two runs in different modes incomparable.
     results_dir = Path(config['output']['results_dir'])
     print('\nmanifest:', write_manifest(config, images_by_batch_size,
-                                        results_dir / 'manifest.json',
-                                        subtest_windows=windows))
+                                        results_dir / 'manifest.json'))
     for stage, path in write_stage_csvs(timings, results_dir).items():
         print(f'{stage:>10}:', path)
 
-    ## tegrastats samples at 100ms or slower, which is far too coarse to line up
-    ## with a single stage, so it is not run from inside this process. Sub-tests
-    ## last seconds though, and manifest.json now carries each one's wall-clock
-    ## window, so a log recorded alongside the sweep can be sliced per batch
-    ## size for power, clocks and thermals.
-    interval = config.get('hardware', {}).get('tegrastats_interval_ms', 100)
-    print('\nFor power and clock data, record a log alongside the next run:\n')
-    print(f'  sudo tegrastats --interval {interval} '
-          f'--logfile {results_dir / "tegrastats.txt"} &')
-    print('  python -m clipbench.run_nvidia --profile '
-          f'{config["profile"]}\n  sudo tegrastats --stop\n')
-    print('Then slice it by the subtest_windows in manifest.json.')
     return 0
 
 

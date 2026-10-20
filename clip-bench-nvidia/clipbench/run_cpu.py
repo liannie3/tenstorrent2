@@ -24,7 +24,7 @@ import torch
 from . import config as cfg
 from . import data
 from . import model as model_lib
-from .reports.schema import write_manifest, write_stage_csvs
+from .reports.schema_cpu import write_manifest, write_stage_csvs
 
 
 ## One sub-test: the whole image set at a single batch size.
@@ -46,9 +46,11 @@ def run_subtest(config, encoder, processor, projector, paths, batch_size, timing
             if max_batches is not None and i >= max_batches:
                 break
 
+            ## Decode
             t0 = time.perf_counter_ns()                                          # Time Marker: Start Load Images 
             images = data.load_images(batch_paths)                               # Return: Returns a list of the path and pixel data of images
 
+            ## Preprocess
             t1 = time.perf_counter_ns()                                          # Time Marker: End Load Images, Start Preprocessing                             (900, 1600, 3) uint8
             pixel_values = data.preprocess(processor, images, device, dtype)     # Return: Resize: Converts 1600x900px res image to 597x336px                    (336, 597, 3) uint8
                                                                                  #         Center: Crops to 336x336px                                            (336, 336, 3) uint8
@@ -56,11 +58,12 @@ def run_subtest(config, encoder, processor, projector, paths, batch_size, timing
                                                                                  #         Normalize: Each R,G,B gets a different mean and STD                   (336, 336, 3) float32
                                                                                  #         Stack: Stacks the images in the NCHW tensor                           (N, 3, 336, 336) float32
                                                                                  #         To: Moves to device and casts precision (fp32 cpu / fp16 jetson)      (N, 3, 336, 336) float32 / float16
-
+            ## Encode
             t2 = time.perf_counter_ns()                                          # Time Marker: End of preprocessing, Start Encode
             outputs = encoder(pixel_values, output_hidden_states=True)           # Return: 
             features = model_lib.select_image_features(outputs, config)          # Return: 
 
+            ## Project
             t3 = time.perf_counter_ns()                                          # Time Marker: End of encode, Start Projection
             embeddings = projector(features)                                     # Return: 
             t4 = time.perf_counter_ns()                                          # Time Marker: End of Projection and Iteration
