@@ -1,0 +1,130 @@
+RAG: NEW DEVICE SETUP
+==================================
+
+This guide assumes the new device already has a compatible NVIDIA GPU, NVIDIA
+driver, and CUDA toolkit. A CUDA-enabled build contains both the CPU and CUDA 
+implementations, so only one build directory is required to benchmark all four
+backends.
+
+Compiled binaries are not stored in Git and must be rebuilt on every new device.
+
+1. Install the development tools
+--------------------------------
+
+Install Git, CMake 3.21+, a C++17 compiler supported by CUDA, Python 3.10, and
+Ninja (recommended). On Jetson, use the CUDA toolkit supplied by the matching
+JetPack release.
+
+Confirm CUDA is available:
+
+  nvcc --version
+
+2. Clone the repository and select the RAG branch
+-------------------------------------------------
+
+  git clone https://github.com/liannie3/tenstorrent2.git
+  cd tenstorrent2
+  git switch al/rag-jetson
+  cd rag
+
+3. Create the Python environment
+--------------------------------
+
+Windows PowerShell:
+
+  py -3.10 -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  python -m pip install --upgrade pip
+
+Linux/Jetson:
+
+  python3.10 -m venv .venv
+  source .venv/bin/activate
+  python -m pip install --upgrade pip
+
+The benchmark tools currently use only the Python standard library.
+
+4. Build CPU plus CUDA support in one binary
+--------------------------------------------
+
+For a Jetson AGX Orin (CUDA architecture 87):
+
+  cmake -S . -B build-cuda -G Ninja -DCMAKE_BUILD_TYPE=Release -DRAG_ENABLE_CUDA=ON -DRAG_CUDA_ARCHITECTURES=87
+  cmake --build build-cuda
+  ctest --test-dir build-cuda --output-on-failure
+
+For another NVIDIA GPU, replace 87 with that GPU's CUDA compute capability.
+
+If using Visual Studio instead of Ninja, omit "-G Ninja" and add
+"--config Release" to the build and test commands. The executables may then be
+inside build-cuda\Release instead of directly inside build-cuda.
+
+The resulting rag_bench executable supports:
+  - cpu
+  - cuda-reference
+  - cuda-optimized
+  - cuda-optimized:bf16
+
+5. Run a quick all-backend smoke test
+-------------------------------------
+
+The harness runs the backends sequentially to avoid benchmark interference.
+One command tests both CPU and CUDA implementations.
+
+Windows PowerShell (enter as one line):
+
+  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results .\results-smoke
+
+Linux/Jetson:
+
+  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results results-smoke
+
+This applies the quality gate before later testing.
+
+6. Run the complete CPU and CUDA benchmark suite
+------------------------------------------------
+
+Windows PowerShell (enter as one line):
+
+  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results .\results
+
+Linux/Jetson:
+
+  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results results
+
+This run has 4 backends, 8 batch sizes, and 10 independent trials.
+
+7. Render the benchmark report
+------------------------------
+
+  python tools/render_report.py --results results --report docs/performance_evaluation.md
+
+Generated result directories are intentionally ignored by Git.
+
+8. Benchmark fixture and real RAG data
+--------------------------------------
+
+The deterministic fixture under bench_data is committed to Git. It should only be
+regenerated if you want to replace it:
+
+  python tools/generate_corpus.py
+
+To create a bank from real project data:
+
+  python tools/build_bank.py entries.jsonl memory.bank --metadata bank_metadata.json
+
+Run one query containing exactly 2,048 little-endian float32 values:
+
+CPU:
+  build-cuda/rag_query memory.bank query.f32 0.7
+
+CUDA reference:
+  build-cuda/rag_query memory.bank query.f32 0.7 --cuda
+
+Optimized CUDA FP32:
+  build-cuda/rag_query memory.bank query.f32 0.7 --cuda-optimized
+
+Optimized CUDA BF16:
+  build-cuda/rag_query memory.bank query.f32 0.7 --cuda-optimized --bf16
+
+Use .exe paths on Windows. 
