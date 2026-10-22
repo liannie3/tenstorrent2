@@ -64,12 +64,18 @@ SUBSTEP_TIMING = False #used to control if sub steps are timed, or pure wall tim
                        #NOTE: evidence found in Profile class of ultralytics/utils/ops.py where they call accelerator.synchronize before measuring the perf_counter
 PROFILE = False
 
+#######################################################################################################################################################################  
+#                        | | | |                                                                                                                                      #
+#   Helper Functions     V V V V                                                                                                                                      #
+#######################################################################################################################################################################  
+
 #used during wall timing runs to synchronize CPU to wait for GPU work
 def _sync(device): 
     if torch.device(device).type == "cuda" and not SUBSTEP_TIMING and not HARDWARE_METRICS: #substep timing is purely async so never want to invoke a CPU sync 
         torch.cuda.synchronize()
     #TODO: WILL HAVE TO ADJUST OR CREATE NEW VERSION FOR TT
-    
+
+
 #timer helper
 #TODO: WILL HAVE TO ADJUST OR CREATE NEW VERSION FOR TT
 @contextmanager
@@ -137,9 +143,40 @@ def store_results(saved):
             writer.writeheader()
         writer.writerows(saved)
 
+#starts the hardware monitor in the background, sets the hardware flags, and always cleans both up
+@contextmanager
+def hw_monitor():
+    global SUBSTEP_TIMING; SUBSTEP_TIMING = False
+    global HARDWARE_METRICS; HARDWARE_METRICS = True
+    name = None #distinguishes which hw monitoring is being used
+    cmd = None #which command is used to start hw monitoring
+    #chooses which hw monitor is used for hw runs
+    if shutil.which("tegrastats"): #Jetson
+        name = "tegrastats"
+        cmd = ["tegrastats", "--interval", "100"]
+    elif shutil.which("nvidia-smi"): #Desktop with nvidia GPU
+                                        #TODO: change to TT gpu's hw_monitor
+        name = "nvidia_smi"
+        cmd =  ["nvidia-smi",
+                "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw,clocks.sm,temperature.gpu",
+                "--format=csv,noheader", "-lms", "100"] #one csv line every 100 ms        
+                
+    CSV_PATH.parent.mkdir(parents = True, exist_ok = True) #create benchmarking/ folder if missing
+    log_path = CSV_PATH.parent / f"{name}.log" #tegrastats.log or nvidia_smi.log
+
+    with open(log_path, "a") as log:
+        proc = subprocess.Popen(cmd, stdout = log, stderr = subprocess.STDOUT)
+        try:
+            time.sleep(1) #let the monitor start
+            yield name
+        finally: #runs even if the pass crashes
+            proc.terminate()
+            proc.wait()
+            HARDWARE_METRICS = False
+
 #######################################################################################################################################################################  
-#                        | | | |
-#   Pre-Processing Stage V V V V
+#                        | | | |                                                                                                                                      #
+#   Pre-Processing Stage V V V V                                                                                                                                      #
 #######################################################################################################################################################################  
 #TODO: ultralytics' preprocess timer doesn't include reading images from disk, 
 #            so read before timer starts
@@ -184,8 +221,8 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
     return im, orig_shapes #return img tensor after pre processing is applied to it, and orignal tensor for post processing
 
 ########################################################################################################################################################################
-#                   | | | |
-#   Inference Stage V V V V
+#                   | | | |                                                                                                                                            #
+#   Inference Stage V V V V                                                                                                                                            #
 ########################################################################################################################################################################
 
 #heleper function for layer walk during inference stage, equivalent to _predict_once
@@ -228,8 +265,8 @@ def inference_stage(model, im, device = 'cuda:0'):
     return x #returns tuple of y (inferenced tensor), preds (dictionary of head layer's raw input)
 
 ########################################################################################################################################################################
-#                         | | | |
-#   Post-Processing Stage V V V V
+#                         | | | |                                                                                                                                      #
+#   Post-Processing Stage V V V V                                                                                                                                      #
 ########################################################################################################################################################################
 
 #based on postprocess function from ultralytics/models/yolo/detect/predict.py
@@ -260,38 +297,11 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
 
     return filtered_preds #returns the list of result objects containing the post processed prediction
 
+
 ########################################################################################################################################################################
-
-#starts the hardware monitor in the background, sets the hardware flags, and always cleans both up
-@contextmanager
-def hw_monitor():
-    global SUBSTEP_TIMING; SUBSTEP_TIMING = False
-    global HARDWARE_METRICS; HARDWARE_METRICS = True
-    name = None #distinguishes which hw monitoring is being used
-    cmd = None #which command is used to start hw monitoring
-    #chooses which hw monitor is used for hw runs
-    if shutil.which("tegrastats"): #Jetson
-        name = "tegrastats"
-        cmd = ["tegrastats", "--interval", "100"]
-    elif shutil.which("nvidia-smi"): #Desktop with nvidia GPU
-                                        #TODO: change to TT gpu's hw_monitor
-        name = "nvidia_smi"
-        cmd =  ["nvidia-smi",
-                "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw,clocks.sm,temperature.gpu",
-                "--format=csv,noheader", "-lms", "100"] #one csv line every 100 ms        
-                
-    CSV_PATH.parent.mkdir(parents = True, exist_ok = True) #create benchmarking/ folder if missing
-    log_path = CSV_PATH.parent / f"{name}.log" #tegrastats.log or nvidia_smi.log
-
-    with open(log_path, "a") as log:
-        proc = subprocess.Popen(cmd, stdout = log, stderr = subprocess.STDOUT)
-        try:
-            time.sleep(1) #let the monitor start
-            yield name
-        finally: #runs even if the pass crashes
-            proc.terminate()
-            proc.wait()
-            HARDWARE_METRICS = False
+#                         | | | |                                                                                                                                      #
+#   Run Pipeline and Main V V V V                                                                                                                                      #
+########################################################################################################################################################################
 
 @torch.inference_mode()
 def hardware_run_pipeline(model, img_paths, batch_size : int = BATCH_SIZE, device = DEVICE, fp16 = FP16):
@@ -305,6 +315,8 @@ def hardware_run_pipeline(model, img_paths, batch_size : int = BATCH_SIZE, devic
             writer.writeheader()
         writer.writerow({"monitor": monitor, "phase": "full_pipeline", "start": hw_window["start"], "end": hw_window["end"]})
 
+
+#test each substage in isolation over a fixed period and accumulates, averages, then stores associated hardware metrics
 @torch.inference_mode()
 def hardware_substages(model, images, device = DEVICE, fp16 = FP16):
     #prepare each stages inputs before metrics are gathered
