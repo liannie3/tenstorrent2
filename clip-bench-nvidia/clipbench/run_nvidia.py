@@ -213,14 +213,16 @@ def _capture_under_nsys(config, profile):
     ## Gets the results path which is defined in jetson.yaml
     results_dir = Path(config['output']['results_dir'])
     results_dir.mkdir(parents=True, exist_ok=True)
-    capture = results_dir / 'sweep'                       # Makes the a folder for the output nsys data
+    capture = results_dir / 'nsys_capture'                       # Makes the a folder for the output nsys data
 
+    #### IMPORTANT: DETERMINES THE FLAGS FOR NSYS PROFILE. SEE NSYS DOCS FOR MORE INFO ####
     ## nsys profile <flags> <command>. Everything from sys.executable on is the
     ## child nsys launches and traces; cwd=PROJECT_ROOT below is what makes
     ## -m clipbench.run_nvidia importable.
     cmd = ['nsys', 'profile',
            '--trace=cuda,nvtx',                           # kernels, memcpys, and our ranges -- nothing else
-           '--sample=none', '--cpuctxsw=none',            # need perf_event access we may not have
+           '--sample=process-tree', 
+           '--cpuctxsw=process-tree',            # need perf_event access we may not have
            '--force-overwrite', 'true',                   # else nsys exits nonzero on the second run
            '--output', str(capture),                      # base path; nsys appends .nsys-rep
            sys.executable, '-m', 'clipbench.run_nvidia',  # same interpreter and venv as the parent
