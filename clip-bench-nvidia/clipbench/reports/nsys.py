@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .schema_nvidia import merge_nvtx_column
 
-## Must stay in step with push() in clipbench/run_nvidia.py
+## Must stay in step with push() in clipbench/benchmark_tests/deep_metrics.py
 RANGE_PATTERN = re.compile(r'^(?P<stage>\w+)/bs=(?P<batch_size>\d+)$')
 
 ## One row per range instance, not per range name. Report names vary between
