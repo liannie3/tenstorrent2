@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.21)
 project(rag_retrieval LANGUAGES CXX)
 
 option(RAG_ENABLE_CUDA "Build the CUDA retrieval backend" OFF)
+option(RAG_ENABLE_CUDA_TIMING "Collect CUDA event timing" OFF)
+option(RAG_ENABLE_NVTX "Enable NVTX profiling annotations" OFF)
+if((RAG_ENABLE_CUDA_TIMING OR RAG_ENABLE_NVTX) AND NOT RAG_ENABLE_CUDA)
+  message(FATAL_ERROR
+    "RAG_ENABLE_CUDA_TIMING and RAG_ENABLE_NVTX require RAG_ENABLE_CUDA=ON")
+endif()
 set(RAG_CUDA_ARCHITECTURES "87" CACHE STRING
     "CUDA architectures for RAG kernels (87 is Jetson AGX Orin)")
 set(CMAKE_CXX_STANDARD 17)
@@ -18,6 +24,12 @@ if(RAG_ENABLE_CUDA)
   target_sources(rag_core PRIVATE src/search_cuda.cu)
   target_link_libraries(rag_core PUBLIC CUDA::cudart CUDA::cublas)
   target_compile_definitions(rag_core PUBLIC RAG_HAS_CUDA=1)
+  if(RAG_ENABLE_CUDA_TIMING)
+    target_compile_definitions(rag_core PUBLIC RAG_HAS_CUDA_TIMING=1)
+  endif()
+  if(RAG_ENABLE_NVTX)
+    target_compile_definitions(rag_core PUBLIC RAG_HAS_NVTX=1)
+  endif()
   set_target_properties(rag_core PROPERTIES
     CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON
@@ -47,5 +59,10 @@ if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME bank_builder COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_builder.py)
+    add_test(
+      NAME benchmark_tools
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_SOURCE_DIR}/tests/test_benchmark_tools.py
+              $<TARGET_FILE:rag_bench>)
   endif()
 endif()

@@ -1,4 +1,5 @@
 #include "rag/bench.h"
+#include "rag/profile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -75,17 +76,25 @@ RunResult run(
                                 std::int64_t& submission) {
     for (std::size_t offset = 0; offset < corpus_size;
          offset += config.batch_size) {
+      RAG_PROFILE_RANGE("rag/request");
       const std::size_t count = config.batch_size;
       const std::vector<float> batch = slice_queries(queries, offset, count);
       const auto start = Clock::now();
-      const std::vector<Match> matches =
-          search(batch, count, config.threshold);
+      TimedSearchResult search_result;
+      {
+        RAG_PROFILE_RANGE("rag/vector_retrieval");
+        search_result = search(batch, count, config.threshold);
+      }
       const auto vector_finish = Clock::now();
+      const std::vector<Match>& matches = search_result.matches;
       if (matches.size() != count) {
         throw std::runtime_error("Backend returned the wrong result count");
       }
-      const std::vector<RetrievalResponse> responses =
-          retrieve_payloads(bank, matches);
+      std::vector<RetrievalResponse> responses;
+      {
+        RAG_PROFILE_RANGE("rag/payload_retrieval");
+        responses = retrieve_payloads(bank, matches);
+      }
       const auto response_finish = Clock::now();
       const double vector_retrieval_us = elapsed_us(start, vector_finish);
       const bool has_accepted_response = std::any_of(
@@ -98,19 +107,42 @@ RunResult run(
 
       if (record) {
         for (std::size_t query = 0; query < responses.size(); ++query) {
-          records.push_back(Record{
-              backend_name,
-              count,
-              "measured",
-              submission,
-              static_cast<std::int64_t>(offset + query),
-              count,
-              end_to_end_us,
-              vector_retrieval_us,
-              payload_retrieval_us,
-              rag::payload_bytes(responses[query]),
-              0,
-              responses[query].match});
+          Record measured;
+          measured.backend = backend_name;
+          measured.batch = count;
+          measured.mode = "measured";
+          measured.iteration = submission;
+          measured.query_index =
+              static_cast<std::int64_t>(offset + query);
+          measured.query_count = count;
+          measured.end_to_end_us = end_to_end_us;
+          measured.vector_retrieval_us = vector_retrieval_us;
+          measured.payload_retrieval_us = payload_retrieval_us;
+          measured.cpu_normalization_us =
+              search_result.timing.cpu_normalization_us;
+          measured.buffer_preparation_us =
+              search_result.timing.buffer_preparation_us;
+          measured.host_result_construction_us =
+              search_result.timing.host_result_construction_us;
+          measured.h2d_us = search_result.timing.h2d_us;
+          measured.conversion_us = search_result.timing.conversion_us;
+          measured.gemm_us = search_result.timing.gemm_us;
+          measured.reduction_us = search_result.timing.reduction_us;
+          measured.d2h_us = search_result.timing.d2h_us;
+          measured.device_total_us = search_result.timing.device_total_us;
+          measured.h2d_bytes = search_result.timing.h2d_bytes;
+          measured.d2h_bytes = search_result.timing.d2h_bytes;
+          measured.device_timing_available =
+              search_result.timing.device_timing_available;
+#ifdef RAG_HAS_CUDA_TIMING
+          measured.cuda_timing_enabled = true;
+#endif
+#ifdef RAG_HAS_NVTX
+          measured.nvtx_enabled = true;
+#endif
+          measured.payload_bytes = rag::payload_bytes(responses[query]);
+          measured.match = responses[query].match;
+          records.push_back(measured);
         }
         ++submission;
       }
@@ -119,16 +151,22 @@ RunResult run(
 
   std::vector<Record> ignored;
   std::int64_t ignored_submission = 0;
-  for (std::size_t pass = 0; pass < config.warmup_iterations; ++pass) {
-    execute_pass(false, ignored, ignored_submission);
+  {
+    RAG_PROFILE_RANGE("rag/warmup_phase");
+    for (std::size_t pass = 0; pass < config.warmup_iterations; ++pass) {
+      execute_pass(false, ignored, ignored_submission);
+    }
   }
 
   RunResult result;
   result.records.reserve(config.measured_iterations * corpus_size);
   std::int64_t submission = 0;
   const auto measured_start = Clock::now();
-  for (std::size_t pass = 0; pass < config.measured_iterations; ++pass) {
-    execute_pass(true, result.records, submission);
+  {
+    RAG_PROFILE_RANGE("rag/measured_phase");
+    for (std::size_t pass = 0; pass < config.measured_iterations; ++pass) {
+      execute_pass(true, result.records, submission);
+    }
   }
   result.measured_wall_us = elapsed_us(measured_start, Clock::now());
   result.measured_queries = config.measured_iterations * corpus_size;

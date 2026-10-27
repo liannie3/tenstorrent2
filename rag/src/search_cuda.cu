@@ -1,10 +1,12 @@
 #include "rag/search.h"
+#include "rag/profile.h"
 
 #include <cublas_v2.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -13,6 +15,8 @@
 
 namespace rag {
 namespace {
+
+using Clock = std::chrono::steady_clock;
 
 // CUDA configuration
 constexpr unsigned kThreadsPerBlock = 256;
@@ -32,6 +36,34 @@ void check_cublas(cublasStatus_t status, const char* operation) {
         std::to_string(static_cast<int>(status)));
   }
 }
+
+double elapsed_us(Clock::time_point start, Clock::time_point finish) {
+  return std::chrono::duration<double, std::micro>(finish - start).count();
+}
+
+#ifdef RAG_HAS_CUDA_TIMING
+class CudaEvent {
+ public:
+  CudaEvent() { check_cuda(cudaEventCreate(&event_), "cudaEventCreate"); }
+  ~CudaEvent() { cudaEventDestroy(event_); }
+
+  CudaEvent(const CudaEvent&) = delete;
+  CudaEvent& operator=(const CudaEvent&) = delete;
+
+  cudaEvent_t get() const noexcept { return event_; }
+
+ private:
+  cudaEvent_t event_ = nullptr;
+};
+
+double event_elapsed_us(const CudaEvent& start, const CudaEvent& finish) {
+  float milliseconds = 0.0f;
+  check_cuda(
+      cudaEventElapsedTime(&milliseconds, start.get(), finish.get()),
+      "cudaEventElapsedTime");
+  return static_cast<double>(milliseconds) * 1000.0;
+}
+#endif
 
 void validate_threshold(float threshold) {
   const bool outside_cosine_range = threshold < -1.0f || threshold > 1.0f;
@@ -261,6 +293,20 @@ struct CudaOptimizedSearcher::Impl {
       : count(bank.size()), precision(requested_precision) {
     try {
       check_cublas(cublasCreate(&handle), "cublasCreate");
+#ifdef RAG_HAS_CUDA_TIMING
+      total_start = std::make_unique<CudaEvent>();
+      h2d_start = std::make_unique<CudaEvent>();
+      h2d_end = std::make_unique<CudaEvent>();
+      conversion_start = std::make_unique<CudaEvent>();
+      conversion_end = std::make_unique<CudaEvent>();
+      gemm_start = std::make_unique<CudaEvent>();
+      gemm_end = std::make_unique<CudaEvent>();
+      reduction_start = std::make_unique<CudaEvent>();
+      reduction_end = std::make_unique<CudaEvent>();
+      d2h_start = std::make_unique<CudaEvent>();
+      d2h_end = std::make_unique<CudaEvent>();
+      total_end = std::make_unique<CudaEvent>();
+#endif
       const std::size_t element_count =
           static_cast<std::size_t>(count) * kTextDim;
       if (precision == SearchPrecision::fp32) {
@@ -385,6 +431,20 @@ struct CudaOptimizedSearcher::Impl {
   float* device_scores = nullptr;
   DeviceMatch* device_matches = nullptr;
   std::size_t capacity = 0;
+#ifdef RAG_HAS_CUDA_TIMING
+  std::unique_ptr<CudaEvent> total_start;
+  std::unique_ptr<CudaEvent> h2d_start;
+  std::unique_ptr<CudaEvent> h2d_end;
+  std::unique_ptr<CudaEvent> conversion_start;
+  std::unique_ptr<CudaEvent> conversion_end;
+  std::unique_ptr<CudaEvent> gemm_start;
+  std::unique_ptr<CudaEvent> gemm_end;
+  std::unique_ptr<CudaEvent> reduction_start;
+  std::unique_ptr<CudaEvent> reduction_end;
+  std::unique_ptr<CudaEvent> d2h_start;
+  std::unique_ptr<CudaEvent> d2h_end;
+  std::unique_ptr<CudaEvent> total_end;
+#endif
 };
 
 CudaOptimizedSearcher::CudaOptimizedSearcher(
@@ -404,23 +464,49 @@ std::vector<Match> CudaOptimizedSearcher::search_batch(
     const std::vector<float>& queries,
     std::size_t query_count,
     float threshold) {
+  return search_batch_timed(queries, query_count, threshold).matches;
+}
+
+TimedSearchResult CudaOptimizedSearcher::search_batch_timed(
+    const std::vector<float>& queries,
+    std::size_t query_count,
+    float threshold) {
   validate_threshold(threshold);
   if (query_count == 0 || queries.size() != query_count * kTextDim) {
     throw std::invalid_argument("Query batch has an invalid shape");
   }
 
+  SearchTiming timing;
   std::vector<float> normalized;
-  normalized.reserve(queries.size());
-  for (std::size_t index = 0; index < query_count; ++index) {
-    const auto begin = queries.begin() + index * kTextDim;
-    std::vector<float> query(begin, begin + kTextDim);
-    std::vector<float> one_normalized = normalize_query(query);
-    normalized.insert(
-        normalized.end(), one_normalized.begin(), one_normalized.end());
+  const auto normalization_start = Clock::now();
+  {
+    RAG_PROFILE_RANGE("rag/normalize_cpu");
+    normalized.reserve(queries.size());
+    for (std::size_t index = 0; index < query_count; ++index) {
+      const auto begin = queries.begin() + index * kTextDim;
+      std::vector<float> query(begin, begin + kTextDim);
+      std::vector<float> one_normalized = normalize_query(query);
+      normalized.insert(
+          normalized.end(), one_normalized.begin(), one_normalized.end());
+    }
   }
+  timing.cpu_normalization_us =
+      elapsed_us(normalization_start, Clock::now());
 
+  const auto preparation_start = Clock::now();
+  {
+    RAG_PROFILE_RANGE("rag/ensure_capacity");
   impl_->ensure_capacity(query_count);
+  }
+  timing.buffer_preparation_us =
+      elapsed_us(preparation_start, Clock::now());
   const std::size_t element_count = query_count * kTextDim;
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(cudaEventRecord(impl_->total_start->get()), "record total start");
+  check_cuda(cudaEventRecord(impl_->h2d_start->get()), "record H2D start");
+#endif
+  {
+    RAG_PROFILE_RANGE("rag/h2d");
   if (impl_->precision == SearchPrecision::fp32) {
     check_cuda(
         cudaMemcpy(impl_->device_queries, normalized.data(),
@@ -431,6 +517,17 @@ std::vector<Match> CudaOptimizedSearcher::search_batch(
         cudaMemcpy(impl_->device_float_queries, normalized.data(),
                    element_count * sizeof(float), cudaMemcpyHostToDevice),
         "cudaMemcpy temporary queries");
+  }
+  }
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(cudaEventRecord(impl_->h2d_end->get()), "record H2D end");
+  check_cuda(
+      cudaEventRecord(impl_->conversion_start->get()),
+      "record conversion start");
+#endif
+  {
+    RAG_PROFILE_RANGE("rag/bf16_conversion");
+  if (impl_->precision == SearchPrecision::bf16) {
     const auto blocks = static_cast<unsigned>(
         (element_count + kThreadsPerBlock - 1) / kThreadsPerBlock);
     convert_float_to_bfloat16<<<blocks, kThreadsPerBlock>>>(
@@ -439,9 +536,18 @@ std::vector<Match> CudaOptimizedSearcher::search_batch(
         element_count);
     check_cuda(cudaGetLastError(), "convert BF16 queries launch");
   }
+  }
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(
+      cudaEventRecord(impl_->conversion_end->get()),
+      "record conversion end");
+  check_cuda(cudaEventRecord(impl_->gemm_start->get()), "record GEMM start");
+#endif
 
   const float alpha = 1.0f;
   const float beta = 0.0f;
+  {
+    RAG_PROFILE_RANGE("rag/gemm");
   if (impl_->precision == SearchPrecision::fp32) {
     check_cublas(
         cublasSgemm(
@@ -484,7 +590,16 @@ std::vector<Match> CudaOptimizedSearcher::search_batch(
             CUBLAS_GEMM_DEFAULT),
         "cublasGemmEx BF16");
   }
+  }
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(cudaEventRecord(impl_->gemm_end->get()), "record GEMM end");
+  check_cuda(
+      cudaEventRecord(impl_->reduction_start->get()),
+      "record reduction start");
+#endif
 
+  {
+    RAG_PROFILE_RANGE("rag/top1_reduction");
   select_best_on_device<<<
       static_cast<unsigned>(query_count), kThreadsPerBlock>>>(
       impl_->device_scores,
@@ -493,22 +608,55 @@ std::vector<Match> CudaOptimizedSearcher::search_batch(
       threshold,
       impl_->device_matches);
   check_cuda(cudaGetLastError(), "select_best_on_device launch");
+  }
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(
+      cudaEventRecord(impl_->reduction_end->get()),
+      "record reduction end");
+  check_cuda(cudaEventRecord(impl_->d2h_start->get()), "record D2H start");
+#endif
 
   std::vector<DeviceMatch> device_results(query_count);
+  {
+    RAG_PROFILE_RANGE("rag/d2h");
   check_cuda(
       cudaMemcpy(device_results.data(), impl_->device_matches,
                  query_count * sizeof(DeviceMatch), cudaMemcpyDeviceToHost),
       "cudaMemcpy optimized matches");
+  }
+#ifdef RAG_HAS_CUDA_TIMING
+  check_cuda(cudaEventRecord(impl_->d2h_end->get()), "record D2H end");
+  check_cuda(cudaEventRecord(impl_->total_end->get()), "record total end");
+  check_cuda(cudaEventSynchronize(impl_->total_end->get()), "wait for timing");
+  timing.h2d_us = event_elapsed_us(*impl_->h2d_start, *impl_->h2d_end);
+  timing.conversion_us =
+      event_elapsed_us(*impl_->conversion_start, *impl_->conversion_end);
+  timing.gemm_us = event_elapsed_us(*impl_->gemm_start, *impl_->gemm_end);
+  timing.reduction_us =
+      event_elapsed_us(*impl_->reduction_start, *impl_->reduction_end);
+  timing.d2h_us = event_elapsed_us(*impl_->d2h_start, *impl_->d2h_end);
+  timing.device_total_us =
+      event_elapsed_us(*impl_->total_start, *impl_->total_end);
+  timing.h2d_bytes = element_count * sizeof(float);
+  timing.d2h_bytes = query_count * sizeof(DeviceMatch);
+  timing.device_timing_available = true;
+#endif
 
   std::vector<Match> matches(query_count);
-  std::transform(
-      device_results.begin(),
-      device_results.end(),
-      matches.begin(),
-      [](const DeviceMatch& result) {
-        return Match{result.accepted != 0, result.id, result.score};
-      });
-  return matches;
+  const auto construction_start = Clock::now();
+  {
+    RAG_PROFILE_RANGE("rag/construct_matches");
+    std::transform(
+        device_results.begin(),
+        device_results.end(),
+        matches.begin(),
+        [](const DeviceMatch& result) {
+          return Match{result.accepted != 0, result.id, result.score};
+        });
+  }
+  timing.host_result_construction_us =
+      elapsed_us(construction_start, Clock::now());
+  return TimedSearchResult{std::move(matches), timing};
 }
 
 }  // namespace rag

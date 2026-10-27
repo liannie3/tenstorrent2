@@ -15,6 +15,26 @@ struct Match {
   float score = -1.0f;
 };
 
+struct SearchTiming {
+  double cpu_normalization_us = 0.0;
+  double buffer_preparation_us = 0.0;
+  double host_result_construction_us = 0.0;
+  double h2d_us = 0.0;
+  double conversion_us = 0.0;
+  double gemm_us = 0.0;
+  double reduction_us = 0.0;
+  double d2h_us = 0.0;
+  double device_total_us = 0.0;
+  std::size_t h2d_bytes = 0;
+  std::size_t d2h_bytes = 0;
+  bool device_timing_available = false;
+};
+
+struct TimedSearchResult {
+  std::vector<Match> matches;
+  SearchTiming timing;
+};
+
 // Shared preprocessing
 std::vector<float> normalize_query(const std::vector<float>& query);
 
@@ -79,6 +99,11 @@ class CudaOptimizedSearcher {
       float threshold = 0.7f);
 
   std::vector<Match> search_batch(
+      const std::vector<float>& queries,
+      std::size_t query_count,
+      float threshold = 0.7f);
+
+  TimedSearchResult search_batch_timed(
       const std::vector<float>& queries,
       std::size_t query_count,
       float threshold = 0.7f);

@@ -10,7 +10,7 @@
 
 namespace rag::bench {
 
-using BatchSearch = std::function<std::vector<Match>(
+using BatchSearch = std::function<TimedSearchResult(
     const std::vector<float>&, std::size_t, float)>;
 
 struct Config {
@@ -30,6 +30,20 @@ struct Record {
   double end_to_end_us = 0.0;
   double vector_retrieval_us = 0.0;
   double payload_retrieval_us = 0.0;
+  double cpu_normalization_us = 0.0;
+  double buffer_preparation_us = 0.0;
+  double host_result_construction_us = 0.0;
+  double h2d_us = 0.0;
+  double conversion_us = 0.0;
+  double gemm_us = 0.0;
+  double reduction_us = 0.0;
+  double d2h_us = 0.0;
+  double device_total_us = 0.0;
+  std::size_t h2d_bytes = 0;
+  std::size_t d2h_bytes = 0;
+  bool device_timing_available = false;
+  bool cuda_timing_enabled = false;
+  bool nvtx_enabled = false;
   std::size_t payload_bytes = 0;
   std::size_t peak_host_rss_bytes = 0;
   Match match;
