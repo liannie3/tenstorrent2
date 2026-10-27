@@ -6,17 +6,18 @@
 # REVISION:        1.0
 # ======================================= #
 
+from . import cpu_pure_latency
 from . import deep_metrics
-from . import pure_latency
+from . import gpu_pure_latency
+from . import hardware_perf
 
-## run_nvidia.py's --test choices. Keeping the mapping here means the CLI and
-## the modules cannot drift apart.
-##
-## hardware_perf is deliberately NOT in here -- it is a wrapper, not a test, so
-## run_nvidia.py reaches for it separately.
+## The name is also the results subdirectory, so each test's CSVs keep the same
+## stage names without colliding.
 TESTS = {
-    'latency': pure_latency.run,
-    'nvtx': deep_metrics.run,
+    'cpu_pure_latency': cpu_pure_latency.run,
+    'gpu_pure_latency': gpu_pure_latency.run,
+    'hardware_perf': hardware_perf.run,
+    'nvtx_stats': deep_metrics.run,
 }
 
 
