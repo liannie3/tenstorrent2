@@ -2,9 +2,9 @@ RAG: NEW DEVICE SETUP
 ==================================
 
 This guide assumes the new device already has a compatible NVIDIA GPU, NVIDIA
-driver, and CUDA toolkit. A CUDA-enabled build contains both the CPU and CUDA 
-implementations, so only one build directory is required to benchmark all four
-backends.
+driver, and CUDA toolkit. Each CUDA-enabled build contains both the CPU and CUDA
+implementations. Use three separate build directories, however, to keep the
+authoritative latency binary free of CUDA-event and NVTX instrumentation.
 
 Compiled binaries are not stored in Git and must be rebuilt on every new device.
 
@@ -44,8 +44,8 @@ Linux/Jetson:
 
 The benchmark tools currently use only the Python standard library.
 
-4. Build CPU plus CUDA support in one binary
---------------------------------------------
+4. Build the authoritative latency binary
+------------------------------------------
 
 For a Jetson AGX Orin (CUDA architecture 87):
 
@@ -65,6 +65,9 @@ The resulting rag_bench executable supports:
   - cuda-optimized
   - cuda-optimized:bf16
 
+Keep this ordinary Release build free of CUDA-event timing and NVTX annotations.
+It is the source of authoritative application latency and throughput numbers.
+
 5. Run a quick all-backend smoke test
 -------------------------------------
 
@@ -73,36 +76,89 @@ One command tests both CPU and CUDA implementations.
 
 Windows PowerShell (enter as one line):
 
-  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results .\results-smoke
+  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results .\results\smoke
 
 Linux/Jetson:
 
-  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results results-smoke
+  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1 --warmup 1 --iters 1 --trials 1 --results results/smoke
 
 This applies the quality gate before later testing.
 
-6. Run the complete CPU and CUDA benchmark suite
-------------------------------------------------
+6. Run the authoritative application-latency suite
+--------------------------------------------------
 
 Windows PowerShell (enter as one line):
 
-  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results .\results
+  python .\tools\bench_harness.py --rag-bench .\build-cuda\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results .\results\release
 
 Linux/Jetson:
 
-  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results results
+  python tools/bench_harness.py --rag-bench build-cuda/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results results/release
 
 This run has 4 backends, 8 batch sizes, and 10 independent trials.
+Each trial launches a new rag_bench process. Raw files are named like
+raw/cuda-optimized-b32-run01.csv. The manifest uses schema v3 and records the
+trial count, file hashes, and instrumentation flags.
 
-7. Render the benchmark report
+7. Run the CUDA-event hardware-metrics suite
+--------------------------------------------
+
+Build a separate executable so CUDA-event overhead cannot contaminate the
+authoritative latency suite:
+
+  cmake -S . -B build-cuda-timing -G Ninja -DCMAKE_BUILD_TYPE=Release -DRAG_ENABLE_CUDA=ON -DRAG_ENABLE_CUDA_TIMING=ON -DRAG_CUDA_ARCHITECTURES=87
+  cmake --build build-cuda-timing
+  ctest --test-dir build-cuda-timing --output-on-failure
+
+Run the same workload shape and keep its output separate:
+
+Windows PowerShell (enter as one line):
+
+  python .\tools\bench_harness.py --rag-bench .\build-cuda-timing\rag_bench.exe --bank .\bench_data\bank.bin --queries .\bench_data\queries.f32 --expected .\bench_data\expected.json --backends cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results .\results\cuda-timing
+
+Linux/Jetson:
+
+  python tools/bench_harness.py --rag-bench build-cuda-timing/rag_bench --bank bench_data/bank.bin --queries bench_data/queries.f32 --expected bench_data/expected.json --backends cuda-optimized,cuda-optimized:bf16 --batches 1,2,4,8,16,32,64,128 --warmup 10 --iters 100 --trials 10 --results results/cuda-timing
+
+Only the optimized CUDA backend currently emits CUDA-event stage timings.
+Use this run for H2D, conversion, GEMM, reduction, D2H, and total device time;
+do not use it as the source of published application latency. Aggregated device
+metrics are written to results/cuda-timing/rag_hardware_layer.csv, with one raw
+CSV per trial under results/cuda-timing/raw/.
+
+8. Capture an NVTX/Nsight diagnostic profile
+---------------------------------------------
+
+Build a third executable with NVTX ranges:
+
+  cmake -S . -B build-cuda-nvtx -G Ninja -DCMAKE_BUILD_TYPE=Release -DRAG_ENABLE_CUDA=ON -DRAG_ENABLE_NVTX=ON -DRAG_CUDA_ARCHITECTURES=87
+  cmake --build build-cuda-nvtx
+
+Capture a short representative run on Jetson:
+
+  mkdir -p results/profiles
+  nsys profile --trace=cuda,nvtx,cublas,osrt --sample=none --force-overwrite=true --output=results/profiles/cuda-optimized-fp32-b32 build-cuda-nvtx/rag_bench bench_data/bank.bin bench_data/queries.f32 bench_data/expected.json --backend cuda-optimized --precision fp32 --batch 32 --warmup 10 --iters 5
+
+Open the resulting .nsys-rep in Nsight Systems or run:
+
+  nsys stats results/profiles/cuda-optimized-fp32-b32.nsys-rep
+
+Nsight is diagnostic only. Do not derive published latency percentiles from a
+profiled execution.
+
+9. Render the benchmark report
 ------------------------------
 
-  python tools/render_report.py --results results --report docs/performance_evaluation.md
+  python tools/render_report.py --results results/release --report docs/performance_evaluation.md
 
-Generated result directories are intentionally ignored by Git.
+Results stored below results/ are intentionally ignored by Git. The release,
+CUDA-timing, and profile outputs remain separate so their measurement purposes
+cannot be confused. The report renderer consumes one results directory at a
+time: use results/release for authoritative latency reporting and inspect
+results/cuda-timing/rag_hardware_layer.csv for CUDA-event hardware metrics.
 
-8. Benchmark fixture and real RAG data
---------------------------------------
+10. Benchmark fixture and real RAG data
+---------------------------------------
 
 The deterministic fixture under bench_data is committed to Git. It should only be
 regenerated if you want to replace it:
@@ -127,4 +183,4 @@ Optimized CUDA FP32:
 Optimized CUDA BF16:
   build-cuda/rag_query memory.bank query.f32 0.7 --cuda-optimized --bf16
 
-Use .exe paths on Windows. 
+Use .exe paths on Windows.
