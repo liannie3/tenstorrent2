@@ -1,0 +1,35 @@
+# Python dependencies for the TinyLlama pipeline + optional Nsight benchmark.
+# Use Python 3.10-3.12 for this retained dependency baseline.
+# Install in your project environment:
+#   python -m pip install -r requirements.txt
+# These pins preserve the original project's model-library API versions.
+# They are not a claim of current/latest versions or GPU validation.
+
+# Model loading, tokenizer, and local Hugging Face checkpoint support.
+transformers==4.44.2
+huggingface-hub==0.24.7
+tokenizers==0.19.1
+safetensors==0.4.5
+sentencepiece==0.2.0
+numpy==1.26.4
+
+# REQUIRED SEPARATELY: CUDA-enabled PyTorch.
+# torch is intentionally omitted so pip does not replace a working GPU build.
+# WSL/Linux desktop: select the appropriate CUDA build at:
+#   https://pytorch.org/get-started/locally/
+# Jetson: use the NVIDIA build compatible with your JetPack/Python versions:
+#   https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/
+# Verify in the same Python environment:
+#   python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+
+# REQUIRED FOR ALL THREE BENCHMARKS: NVIDIA Nsight Systems CLI (nsys).
+# Install separately for your platform and add nsys to PATH.
+#   nsys --version
+# NVTX calls use torch.cuda.nvtx; no separate nvtx pip package is needed here.
+# CPU/RAM sampling uses Linux /proc; run in Linux, WSL2, or Jetson Linux.
+
+# TEAM-SPECIFIC DEPENDENCIES:
+# Add packages needed by your actual YOLO, CLIP/projector, and RAG adapters.
+# Their implementations were not supplied, so their requirements are unknown.
+# Model weights, image inputs, RAG banks, and alignment manifests are not
+# installed by this file. Keep those as separate project assets.
