@@ -21,8 +21,13 @@ from pathlib import Path
 import torch
 import transformers
 
-COLUMNS = ('batch_size', 'iter', 'duration_ms')
+## view is the camera index within an iteration, or -1 for a row that spans the
+## whole rig ('iter' and 'subtest')
+COLUMNS = ('views', 'iter', 'view', 'duration_ms')
 NVTX_COLUMN = 'nvtx_ms'
+
+## (views, iter, view) identifies a row -- what the nvtx merge keys on
+KEY_WIDTH = 3
 
 ## run_nvidia.py sets this on the child it launches under `nsys profile`
 NSYS_ENV_GUARD = 'CLIPBENCH_UNDER_NSYS'
@@ -38,12 +43,12 @@ def write_stage_csvs(timings, directory):
     directory.mkdir(parents=True, exist_ok=True)
 
     by_stage = {}
-    for batch_size, stage, index, duration_ms in timings:
-        by_stage.setdefault(stage, []).append((batch_size, index, duration_ms))
+    for views, stage, index, view, duration_ms in timings:
+        by_stage.setdefault(stage, []).append((views, index, view, duration_ms))
 
     paths = {}
     for stage, rows in by_stage.items():
-        rows.sort()                 # batch size, then iteration
+        rows.sort()                 # view count, then iteration, then view
         path = directory / f'{stage}.csv'
         with open(path, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -55,7 +60,7 @@ def write_stage_csvs(timings, directory):
 
 
 ## Adds an nvtx_ms column to the CSVs write_stage_csvs() already wrote, keyed on
-## (batch_size, iter). Rewrites in place; safe to run twice.
+## (views, iter, view). Rewrites in place; safe to run twice.
 ##
 ## nvtx_ms is host-side, so for encode and project it is launch time, not GPU
 ## time. decode, preprocess and subtest are host-bound and should agree with
@@ -64,8 +69,8 @@ def merge_nvtx_column(nvtx_timings, directory, column=NVTX_COLUMN):
     directory = Path(directory)
 
     by_stage = {}
-    for batch_size, stage, index, duration_ms in nvtx_timings:
-        by_stage.setdefault(stage, {})[(batch_size, index)] = duration_ms
+    for views, stage, index, view, duration_ms in nvtx_timings:
+        by_stage.setdefault(stage, {})[(views, index, view)] = duration_ms
 
     merged = {}
     for stage, lookup in by_stage.items():
@@ -83,9 +88,11 @@ def merge_nvtx_column(nvtx_timings, directory, column=NVTX_COLUMN):
         rows = []
         for row in reader:
             row = row[:len(COLUMNS)]
+            if len(row) < len(COLUMNS):
+                continue
             try:
-                key = (int(row[0]), int(row[1]))
-            except (IndexError, ValueError):
+                key = tuple(int(field) for field in row[:KEY_WIDTH])
+            except ValueError:
                 continue
             value = lookup.get(key)
             ## blank, not 0, when the capture has no range for that iteration
@@ -131,7 +138,7 @@ def _nvpmodel_mode():
 
 
 ## Written beside the CSVs so a result traces back to the code that made it
-def write_manifest(config, images_by_batch_size, path):
+def write_manifest(config, images_by_views, path):
     manifest = {
         'profile': config['profile'],
         'platform': config['run']['target'],
@@ -141,8 +148,9 @@ def write_manifest(config, images_by_batch_size, path):
         'image_processor': config['model'].get('image_processor'),
         'layer_index': config['model']['layer_index'],
         'keep_cls': config['model']['keep_cls'],
-        'batch_sizes': config['run']['batch_sizes'],
-        'images_by_batch_size': images_by_batch_size,
+        'views': config['run']['views'],
+        'view_order': config['data']['view_order'],
+        'images_by_views': images_by_views,
         'git_sha': _git_sha(),
         'nvpmodel_mode': _nvpmodel_mode(),
         'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none',

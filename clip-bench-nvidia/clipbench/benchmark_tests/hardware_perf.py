@@ -22,7 +22,7 @@ import torch
 from .. import data
 from .. import model as model_lib
 
-## 1000 ms is the tegrastats default, which gives ~8 samples for a bs=1
+## 1000 ms is the tegrastats default, which gives ~8 samples for a views=1
 ## sub-test. 100 ms is enough to see the clock ramp.
 INTERVAL_MS = 100
 
@@ -37,25 +37,25 @@ def _stop():
         pass
 
 
-## One sub-test: the whole image set at a single batch size.
+## One sub-test: every frame, at a single view count.
 ## timings is unused -- the samples are the data, and they are in the log.
 ## Kept so every test has the same signature.
-def run(config, encoder, processor, projector, paths, batch_size, timings):
+def run(config, encoder, processor, projector, views_paths, views, timings):
 
     ## Loads parameters which are initialized in the jetson.yaml file
     device = config['run']['device']                               # config['run']['device'] returns cuda
     dtype = model_lib.resolve_dtype(config['run']['precision'])    # Goes to model.py and makes sure config dtype is allowed
-    max_batches = config['run'].get('max_batches')                 # Sets the maximum batches
+    max_frames = config['run'].get('max_frames')                   # Caps the iterations
     images_seen = 0                                                # Image counter
 
-    num_batches = (len(paths) + batch_size - 1) // batch_size      # Make sure to keep batches in power of 2 (1, 2, 4, 8, 16, ...)
-    if max_batches is not None:
-        num_batches = min(num_batches, max_batches)                # Resolves if a batch size is like a 5 or an odd number not listed above
+    num_frames = data.num_frames(views_paths)                      # Iterations available, set by the shortest view
+    if max_frames is not None:
+        num_frames = min(num_frames, max_frames)
 
-    ## One log per batch size, beside the other tests' output
+    ## One log per view count, beside the other tests' output
     out_dir = Path(config['output']['results_dir']) / 'hardware_perf'
     out_dir.mkdir(parents=True, exist_ok=True)
-    log_path = out_dir / f'tegrastats_bs{batch_size}.log'
+    log_path = out_dir / f'tegrastats_v{views}.log'
     interval = config['run'].get('tegrastats_interval_ms', INTERVAL_MS)
 
     _stop()
@@ -72,18 +72,21 @@ def run(config, encoder, processor, projector, paths, batch_size, timings):
 
     try:
         with torch.inference_mode():
-            for i, batch_paths in enumerate(data.iter_batches(paths, batch_size)):
-                if i >= num_batches:
+            for i, frame_paths in enumerate(data.iter_frames(views_paths)):
+                if i >= num_frames:
                     break
 
-                ## Untimed on purpose -- tegrastats is the only instrument here
-                images = data.load_images(batch_paths)                            # Return: Returns a list of the path and pixel data of images
-                pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
-                outputs = encoder(pixel_values, output_hidden_states=True)
-                features = model_lib.select_image_features(outputs, config)
-                embeddings = projector(features)
+                ## One sub-iteration per view, no synchronize between them
+                for path in frame_paths:
 
-                images_seen += len(batch_paths)
+                    ## Untimed on purpose -- tegrastats is the only instrument here
+                    images = data.load_images([path])                                 # Return: Returns a list of the path and pixel data of images
+                    pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
+                    outputs = encoder(pixel_values, output_hidden_states=True)
+                    features = model_lib.select_image_features(outputs, config)
+                    embeddings = projector(features)
+
+                    images_seen += 1
 
         ## Drains the queue so the last kernels land inside the sampled window
         torch.cuda.synchronize()

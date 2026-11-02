@@ -22,17 +22,24 @@ model:
 
 # ---------------- Run ----------------
 run:
-  batch_sizes: [1]                          # one sub-test per batch size (testing performance against different batch sizes)
-  max_batches: null                         # null = run all batches; N = stop after N batches (per sub-test)
+  views: [6]                                # one sub-test per view count (1 = front only, 6 = whole rig)
+  max_frames: null                          # null = run all frames; N = stop after N iterations (per sub-test)
   seed: 0
   warmup_iters: 20
   timed_iters: 200
 
 # ---------------- Data ----------------
 data:
-  path: data/images/CAM_FRONT               # Path to nuScenes Images (Front View)
+  path: data/images/                        # Path to nuScenes Images (6 Different Views)
+  view_order:                               # subdirectory per camera. views: [3] takes the first three.
+    - CAM_FRONT
+    - CAM_FRONT_LEFT
+    - CAM_FRONT_RIGHT
+    - CAM_BACK_LEFT
+    - CAM_BACK_RIGHT
+    - CAM_BACK
   image_size: 336                           # Size the images will be resized to
-  max_images: 128                           # Maximum # of images in a run
+  max_images: 128                           # Maximum # of images per view
   stride: 1                                 # Step size
 
 # ---------------- Correctness ----------------

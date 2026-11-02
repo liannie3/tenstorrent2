@@ -48,22 +48,23 @@ from .reports.schema_nvidia import under_nsys, write_manifest, write_stage_csvs
 
 
 ## Warmup loop for each subtest
-def warmup_loop(config, encoder, processor, projector, paths, batch_size, iterations):
+def warmup_loop(config, encoder, processor, projector, views_paths, iterations):
     if iterations <= 0:
         return
 
     device = config['run']['device']
     dtype = model_lib.resolve_dtype(config['run']['precision'])
-    warm_paths = paths[:batch_size]                   # one batch is enough
+    warm_frame = next(data.iter_frames(views_paths), ())   # frame 0 of every view
 
     ## warm_ names so nothing here shadows what the test's shape print reads
     with torch.inference_mode():
         for _ in range(iterations):
-            warm_images = data.load_images(warm_paths)
-            warm_pixel_values = data.preprocess(processor, warm_images, device, dtype)
-            warm_outputs = encoder(warm_pixel_values, output_hidden_states=True)
-            warm_features = model_lib.select_image_features(warm_outputs, config)
-            projector(warm_features)
+            for warm_path in warm_frame:
+                warm_images = data.load_images([warm_path])
+                warm_pixel_values = data.preprocess(processor, warm_images, device, dtype)
+                warm_outputs = encoder(warm_pixel_values, output_hidden_states=True)
+                warm_features = model_lib.select_image_features(warm_outputs, config)
+                projector(warm_features)
 
     torch.cuda.synchronize()
 
@@ -115,17 +116,20 @@ def main(argv=None):
           f"precision: {run['precision']}  nvtx: {'yes' if nvtx_ok else 'NO'}")
 
     ## 3. Model pieces, built once and reused by every sub-test
-    processor = model_lib.load_processor(config)                                 # from model.py
+    processor = model_lib.load_processor(config)                                # from model.py
     encoder = model_lib.load_encoder(config)                                    # from model.py
     projector = model_lib.load_projector(config, encoder.config.hidden_size)    # from model.py
 
-    ## 4. The image list, identical for every sub-test
-    paths = data.load_paths(config)                                             # list of image paths
-    print(f"found {len(paths)} images in {config['data']['path']}")
-    if not paths:
-        raise SystemExit('no images found - check data.path in configs/base.yaml')
+    ## 4. One image list per camera. Loaded at the full view count just to fail
+    ## early on a bad data.path -- each sub-test loads its own at step 5.
+    all_views = data.load_views(config, max(run['views']))
+    for name, view_paths in all_views.items():
+        print(f'  {name:<16} {len(view_paths)} images')
+    if not data.num_frames(all_views):
+        raise SystemExit('no images found - check data.path and data.view_order in '
+                         f"configs/base.yaml ({config['data']['path']})")
 
-    ## 5. One test at a time, one sub-test per batch size. Each test gets its
+    ## 5. One test at a time, one sub-test per view count. Each test gets its
     ## own buffer and its own results subdirectory, so the stage names stay the
     ## same everywhere without one test overwriting another's CSVs.
     ##
@@ -143,16 +147,18 @@ def main(argv=None):
             continue
 
         print(f'\n########## {test_name} ##########')
-        timings = []        # (batch_size, stage, iter, duration_ms)
-        images_by_batch_size = {}
+        timings = []        # (views, stage, iter, view, duration_ms)
+        images_by_views = {}
 
-        for batch_size in run['batch_sizes']:
-            print(f'\n=== sub-test: batch size {batch_size} over {len(paths)} images ===')
-            warmup_loop(config, encoder, processor, projector, paths, batch_size,
+        for views in run['views']:
+            views_paths = data.load_views(config, views)
+            print(f'\n=== sub-test: {data.num_frames(views_paths)} frames x '
+                  f'{views} views ===')
+            warmup_loop(config, encoder, processor, projector, views_paths,
                         run.get('warmup_iters', 0))
             images_seen = run_subtest(
-                config, encoder, processor, projector, paths, batch_size, timings)
-            images_by_batch_size[batch_size] = images_seen
+                config, encoder, processor, projector, views_paths, views, timings)
+            images_by_views[views] = images_seen
             print(f'  images      : {images_seen}')
 
         ## 6. The child's output is the capture itself, so only the parent
@@ -164,7 +170,7 @@ def main(argv=None):
             continue
 
         out_dir = results_dir / test_name
-        print('\nmanifest:', write_manifest(config, images_by_batch_size,
+        print('\nmanifest:', write_manifest(config, images_by_views,
                                             out_dir / 'manifest.json'))
         for stage, path in write_stage_csvs(timings, out_dir).items():
             print(f'{stage:>10}:', path)

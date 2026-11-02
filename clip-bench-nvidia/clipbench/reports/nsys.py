@@ -22,7 +22,7 @@ from pathlib import Path
 from .schema_nvidia import merge_nvtx_column
 
 ## Must stay in step with push() in clipbench/benchmark_tests/deep_metrics.py
-RANGE_PATTERN = re.compile(r'^(?P<stage>\w+)/bs=(?P<batch_size>\d+)$')
+RANGE_PATTERN = re.compile(r'^(?P<stage>\w+)/v=(?P<views>\d+)/view=(?P<view>-?\d+)$')
 
 ## One row per range instance, not per range name. Report names vary between
 ## nsys versions -- `nsys stats --help-reports` lists what yours has.
@@ -72,9 +72,9 @@ def parse_ranges(csv_path):
         raise RuntimeError(f'unexpected duration unit {unit!r} in column {duration_col!r}')
     per_ms = PER_MS[unit]
 
-    ## Same (batch_size, stage, iter, duration_ms) rows a runner buffers.
+    ## Same (views, stage, iter, view, duration_ms) rows a runner buffers.
     ## The range name has no iteration index in it on purpose, so the index is
-    ## the position within its (batch size, stage) group -- which works because
+    ## the position within its (views, stage, view) group -- which works because
     ## nsys lists push/pop ranges in start order.
     counts = {}
     timings = []
@@ -83,10 +83,11 @@ def parse_ranges(csv_path):
         if not match:
             continue
         stage = match['stage']
-        batch_size = int(match['batch_size'])
-        index = counts.get((batch_size, stage), 0)
-        counts[(batch_size, stage)] = index + 1
-        timings.append((batch_size, stage, index, float(row[duration_col]) / per_ms))
+        views = int(match['views'])
+        view = int(match['view'])
+        index = counts.get((views, stage, view), 0)
+        counts[(views, stage, view)] = index + 1
+        timings.append((views, stage, index, view, float(row[duration_col]) / per_ms))
 
     return timings
 

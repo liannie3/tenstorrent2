@@ -32,65 +32,73 @@ def require_nvtx():
         raise RuntimeError('NVTX unavailable - run the latency test instead') from exc
 
 
-## Keep in step with RANGE_PATTERN in clipbench/reports/nsys.py
-def push(stage, batch_size):
-    nvtx.range_push(f'{stage}/bs={batch_size}')
+## Keep in step with RANGE_PATTERN in clipbench/reports/nsys.py.
+## view -1 means all views, for ranges that span the whole rig.
+def push(stage, views, view):
+    nvtx.range_push(f'{stage}/v={views}/view={view}')
 
 
 def pop():
     nvtx.range_pop()
 
 
-## One sub-test: the whole image set at a single batch size.
+## One sub-test: every frame, at a single view count.
 ## timings is unused -- the ranges are the data, and nsys holds them until the
 ## parent exports them. Kept so every test has the same signature.
-def run(config, encoder, processor, projector, paths, batch_size, timings):
+def run(config, encoder, processor, projector, views_paths, views, timings):
     require_nvtx()
 
     ## Loads parameters which are initialized in the jetson.yaml file
     device = config['run']['device']                               # config['run']['device'] returns cuda
     dtype = model_lib.resolve_dtype(config['run']['precision'])    # Goes to model.py and makes sure config dtype is allowed
-    max_batches = config['run'].get('max_batches')                 # Sets the maximum batches
+    max_frames = config['run'].get('max_frames')                   # Caps the iterations
     images_seen = 0                                                # Image counter
 
-    num_batches = (len(paths) + batch_size - 1) // batch_size      # Make sure to keep batches in power of 2 (1, 2, 4, 8, 16, ...)
-    if max_batches is not None:
-        num_batches = min(num_batches, max_batches)                # Resolves if a batch size is like a 5 or an odd number not listed above
+    num_frames = data.num_frames(views_paths)                      # Iterations available, set by the shortest view
+    if max_frames is not None:
+        num_frames = min(num_frames, max_frames)
 
 
-    push('subtest', batch_size)                       # Subtest: NVTX Push
+    push('subtest', views, -1)                        # Subtest: NVTX Push
 
     with torch.inference_mode():
-        for i, batch_paths in enumerate(data.iter_batches(paths, batch_size)):
-            if i >= num_batches:
+        for i, frame_paths in enumerate(data.iter_frames(views_paths)):
+            if i >= num_frames:
                 break
 
-            push('iter', batch_size)                  # Iter: NVTX Push
+            push('iter', views, -1)                   # Iter: NVTX Push
 
-            ## Decode [CPU]
-            push('decode', batch_size)                # Decode: NVTX Push
-            images = data.load_images(batch_paths)    # Return: Returns a list of the path and pixel data of images
-            pop()                                     # Decode: NVTX Pop
+            ## One sub-iteration per view, no synchronize between them
+            for view, path in enumerate(frame_paths):
 
-            ## Preprocessing [CPU]
-            push('preprocess', batch_size)                                    # Preprocessing: NVTX Push
-            pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
-            pop()                                                             # Preprocessing: NVTX Pop
+                push('subiter', views, view)              # Subiter: NVTX Push
 
-            ## Encode [GPU]
-            push('encode', batch_size)                                        # Encode: NVTX Push
-            outputs = encoder(pixel_values, output_hidden_states=True)
-            features = model_lib.select_image_features(outputs, config)
-            pop()                                                             # Encode: NVTX Pop
+                ## Decode [CPU]
+                push('decode', views, view)               # Decode: NVTX Push
+                images = data.load_images([path])         # Return: Returns a list of the path and pixel data of images
+                pop()                                     # Decode: NVTX Pop
 
-            ## Project [GPU]
-            push('project', batch_size)               # Project: NVTX Push
-            embeddings = projector(features)
-            pop()                                     # Project: NVTX Pop
+                ## Preprocessing [CPU]
+                push('preprocess', views, view)                                   # Preprocessing: NVTX Push
+                pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
+                pop()                                                             # Preprocessing: NVTX Pop
+
+                ## Encode [GPU]
+                push('encode', views, view)                                       # Encode: NVTX Push
+                outputs = encoder(pixel_values, output_hidden_states=True)
+                features = model_lib.select_image_features(outputs, config)
+                pop()                                                             # Encode: NVTX Pop
+
+                ## Project [GPU]
+                push('project', views, view)              # Project: NVTX Push
+                embeddings = projector(features)
+                pop()                                     # Project: NVTX Pop
+
+                pop()                                     # Subiter: NVTX Pop
+
+                images_seen += 1
 
             pop()                                     # Iter: NVTX Pop
-
-            images_seen += len(batch_paths)
 
     ## Ranges are host-side, so this is what makes 'subtest' enclose the GPU
     ## tail instead of ending when the last kernel was merely queued. Also

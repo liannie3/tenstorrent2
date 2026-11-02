@@ -3,20 +3,13 @@
 # ORGANIZATION:    Texas A&M University
 # FILE:            gpu_pure_latency.py
 # CREATED:         10/26/2026
-# REVISION:        1.0
+# REVISION:        2.0
 # ======================================= #
 
-## CUDA events only. Every number here is GPU execution time.
-##
-## decode and preprocess are absent on purpose: they launch no kernels, so an
-## event pair around them has no work between the two markers and reads ~0.
-## Their cost is host time and lives in cpu_pure_latency.py.
-##
-## A CUDA call returns as soon as its kernels are queued, so a host clock here
-## would measure launch cost. An event is a timestamp written into the stream
-## instead -- recording one does not make the host wait, so the overlap the Orin
-## relies on survives, and the durations are read back after the sub-test's one
-## synchronize, by which point every event has completed.
+
+## Iteration = frame i from each view (FRONT, FRONT_LEFT, FRONT_RIGHT, etc)
+## Within each iteration, one view runs at a time with no synchronization. This will allow us to see how the
+## CPU and the GPU are working alongside one another
 
 import time
 import torch
@@ -25,79 +18,92 @@ from .. import data
 from .. import model as model_lib
 
 
-## One sub-test: the whole image set at a single batch size.
-def run(config, encoder, processor, projector, paths, batch_size, timings):
+## Start/end pair, allocated before the loop so recording one costs nothing but
+## the record itself
+def _event_pair():
+    return (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+
+
+## One sub-test: every frame, at a single view count.
+def run(config, encoder, processor, projector, views_paths, views, timings):
 
     ## Loads parameters which are initialized in the jetson.yaml file
     device = config['run']['device']                               # config['run']['device'] returns cuda
     dtype = model_lib.resolve_dtype(config['run']['precision'])    # Goes to model.py and makes sure config dtype is allowed
-    max_batches = config['run'].get('max_batches')                 # Sets the maximum batches
+    max_frames = config['run'].get('max_frames')                   # Caps the iterations
     images_seen = 0                                                # Image counter
-    batches_run = 0                                                # Batches counter
+    frames_run = 0                                                 # Iteration counter
 
-    num_batches = (len(paths) + batch_size - 1) // batch_size      # Make sure to keep batches in power of 2 (1, 2, 4, 8, 16, ...)
-    if max_batches is not None:
-        num_batches = min(num_batches, max_batches)                # Resolves if a batch size is like a 5 or an odd number not listed above
+    num_frames = data.num_frames(views_paths)                      # Iterations available, set by the shortest view
+    if max_frames is not None:
+        num_frames = min(num_frames, max_frames)
 
-    ## cudaEvents setup -- allocated before the loop so recording one costs
-    ## nothing but the record itself
-    encode_events = []
-    project_events = []
-    for i in range(num_batches):                                                # Loop over number of batches
-        encode_events.append((torch.cuda.Event(enable_timing=True),             # Tuple of the start and end of encode events (t0, t1) B total (Number of batches)
-                              torch.cuda.Event(enable_timing=True)))
-        project_events.append((torch.cuda.Event(enable_timing=True),            # Tuple of the start and end of project events (t0, t1) B total (Number of batches)
-                               torch.cuda.Event(enable_timing=True)))
+    ## cudaEvents setup -- one pair per (frame, view) for the stages, plus one
+    ## pair per frame for the iteration envelope
+    encode_events = [[_event_pair() for _ in range(views)] for _ in range(num_frames)]
+    project_events = [[_event_pair() for _ in range(views)] for _ in range(num_frames)]
+    iter_events = [_event_pair() for _ in range(num_frames)]
 
     ## perf_counter appears once, for the sub-test envelope only -- throughput
     ## needs a wall clock and no event pair can give one
     subtest_start = time.perf_counter_ns()
 
     with torch.inference_mode():
-        for i, batch_paths in enumerate(data.iter_batches(paths, batch_size)):
-            if i >= num_batches:
+        for i, frame_paths in enumerate(data.iter_frames(views_paths)):
+            if i >= num_frames:
                 break
 
-            ## Decode + preprocess [CPU, untimed here]
-            images = data.load_images(batch_paths)                            # Return: Returns a list of the path and pixel data of images
-            pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
+            iter_events[i][0].record()                # Iteration: Record starting time to cudaEvent
 
-            ## Encode [GPU]
-            encode_events[i][0].record()                                      # Encode: Record starting time to cudaEvent
-            outputs = encoder(pixel_values, output_hidden_states=True)
-            features = model_lib.select_image_features(outputs, config)
-            encode_events[i][1].record()                                      # Encode: Record ending time to cudaEvent
+            for view, path in enumerate(frame_paths):
 
-            ## Project [GPU]
-            project_events[i][0].record()             # Project: Record starting time to cudaEvent
-            embeddings = projector(features)
-            project_events[i][1].record()             # Project: Record ending time to cudaEvent
+                ## Decode + preprocess [CPU, untimed here]
+                images = data.load_images([path])                                  # Return: Returns a list of the path and pixel data of images
+                pixel_values = data.preprocess(processor, images, device, dtype)   # Return: Explained more in run_cpu.py
 
-            images_seen += len(batch_paths)
-            batches_run += 1
+                ## Encode [GPU]
+                encode_events[i][view][0].record()                                # Encode: Record starting time to cudaEvent
+                outputs = encoder(pixel_values, output_hidden_states=True)
+                features = model_lib.select_image_features(outputs, config)
+                encode_events[i][view][1].record()                                # Encode: Record ending time to cudaEvent
 
-    ## The only synchronize in the timed region -- once per batch size, not per
-    ## stage, so overlap survives. Draining here pulls the GPU tail into
-    ## 'subtest' and keeps this sub-test's trailing kernels out of the next
+                ## Project [GPU]
+                project_events[i][view][0].record()       # Project: Record starting time to cudaEvent
+                embeddings = projector(features)
+                project_events[i][view][1].record()       # Project: Record ending time to cudaEvent
+
+                images_seen += 1
+
+            iter_events[i][1].record()                # Iteration: Record ending time to cudaEvent
+            frames_run += 1
+
+    ## The only synchronize in the timed region -- once per sub-test, not per
+    ## stage or per view, so overlap survives. Draining here pulls the GPU tail
+    ## into 'subtest' and keeps this sub-test's trailing kernels out of the next
     ## one's numbers.
     torch.cuda.synchronize()
     subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6               # Time for the entire subtest
 
-    timings.append((batch_size, 'subtest', 0, subtest_ms))                    # Add the subtest times to the list
+    timings.append((views, 'subtest', 0, -1, subtest_ms))                     # Add the subtest times to the list
 
     ## The stream is drained, so every event has completed and these reads
     ## return immediately. elapsed_time() gives milliseconds as a float.
-    for i in range(batches_run):
-        encode_ms = encode_events[i][0].elapsed_time(encode_events[i][1])      # Finds the elapsed time for each of the events (float)
-        project_ms = project_events[i][0].elapsed_time(project_events[i][1])
-        timings.append((batch_size, 'encode',  i, encode_ms))                  # Appends them to the timing buffer
-        timings.append((batch_size, 'project', i, project_ms))
+    for i in range(frames_run):
+        for view in range(views):
+            encode_ms = encode_events[i][view][0].elapsed_time(encode_events[i][view][1])     # Finds the elapsed time for each of the events (float)
+            project_ms = project_events[i][view][0].elapsed_time(project_events[i][view][1])
+            timings.append((views, 'encode',  i, view, encode_ms))                            # Appends them to the timing buffer
+            timings.append((views, 'project', i, view, project_ms))
 
-        ## GPU work only. One iteration's GPU stages overlap the next
-        ## iteration's host stages, so this is a sum, not a wall-clock reading.
-        timings.append((batch_size, 'iter', i, encode_ms + project_ms))
+            ## GPU work for this one view
+            timings.append((views, 'subiter', i, view, encode_ms + project_ms))
 
-    ## Shapes are the same every iteration, so the last batch describes them all
+        ## view -1 means all views: GPU span of the whole rig for frame i,
+        ## bubbles included, so it is >= the sum of the sub-iterations above
+        timings.append((views, 'iter', i, -1,
+                        iter_events[i][0].elapsed_time(iter_events[i][1])))
+
+    ## Shapes are the same every sub-iteration, so the last one describes them all
     if images_seen:
         print('  pixel_values:', tuple(pixel_values.shape))
         print('  features    :', tuple(features.shape))

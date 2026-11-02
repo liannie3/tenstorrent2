@@ -33,16 +33,32 @@ def test_image_processor_backend_is_pinned(config):
     assert config['model'].get('image_processor') in ('pil', 'torchvision')
 
 
-def test_data_path_is_a_nuscenes_keyframe_camera(config):
-    camera = Path(config['data']['path']).name
-    assert camera in CAMERAS, f'Unknown camera: {camera}, expected one of {sorted(CAMERAS)}'
+## data.path holds one subdirectory per camera, and run.views takes the first N
+## of data.view_order -- so an unknown name there means a sub-test would glob a
+## directory that does not exist and silently see no frames
+def test_view_order_is_nuscenes_keyframe_cameras(config):
+    view_order = config['data']['view_order']
+    assert view_order, 'data.view_order is empty, so no camera would be loaded'
+    assert len(set(view_order)) == len(view_order), f'duplicate camera in {view_order}'
+
+    unknown = [name for name in view_order if name not in CAMERAS]
+    assert not unknown, f'Unknown cameras: {unknown}, expected from {sorted(CAMERAS)}'
+
+
+## Every view count in the sweep must be loadable
+def test_views_within_view_order(config):
+    assert max(config['run']['views']) <= len(config['data']['view_order'])
 
 
 def test_data_frames_exist(config):
     root = Path(config['data']['path'])
     if not root.is_dir():
         pytest.skip(f'nuScenes frames not downloaded at {root}')
-    assert any(root.glob('*.jpg')), f'{root} contains no .jpg frames'
+
+    for camera in config['data']['view_order']:
+        view_dir = root / camera
+        assert view_dir.is_dir(), f'{view_dir} is missing - data.view_order names it'
+        assert any(view_dir.glob('*.jpg')), f'{view_dir} contains no .jpg frames'
 
 
 ## The whole point of the base.yaml / <profile>.yaml split: a profile may
