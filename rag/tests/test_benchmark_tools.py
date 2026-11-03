@@ -115,10 +115,23 @@ def main():
         assert manifest_path.is_file()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest["schema"] == "rag-benchmark-manifest-v3"
-        assert manifest["instrumentation"] == {
-            "cuda_event_timing": False,
-            "nvtx": False,
+        instrumentation = manifest["instrumentation"]
+        assert isinstance(instrumentation["cuda_event_timing"], bool)
+        assert isinstance(instrumentation["nvtx"], bool)
+        assert instrumentation["telemetry"] == {
+            "provider": "none",
+            "device": 0,
+            "interval_ms": 500,
+            "scope": "entire benchmark child process per trial",
         }
+        with (results / "rag_telemetry.csv").open(
+            newline="", encoding="utf-8"
+        ) as source:
+            assert list(csv.DictReader(source)) == []
+        with (results / "rag_thermal_layer.csv").open(
+            newline="", encoding="utf-8"
+        ) as source:
+            assert list(csv.DictReader(source)) == []
         with (results / "rag_hardware_layer.csv").open(
             newline="", encoding="utf-8"
         ) as source:

@@ -15,6 +15,12 @@ from pathlib import Path
 from benchmark_common import parse_backend, run_benchmark, write_csv
 from quality_gate import FIELDS as QUALITY_FIELDS
 from quality_gate import evaluate_backend
+from telemetry import (
+    SAMPLE_FIELDS as TELEMETRY_FIELDS,
+    SUMMARY_FIELDS as THERMAL_FIELDS,
+    TelemetrySampler,
+    summarize as summarize_telemetry,
+)
 
 
 APPLICATION_FIELDS = [
@@ -291,13 +297,24 @@ def main() -> int:
     )
     parser.add_argument(
         "--power-sampler",
-        help="Reserved interface for a timestamp,watts sampler; energy remains blank",
+        help="Deprecated; use --telemetry-provider",
     )
+    parser.add_argument(
+        "--telemetry-provider",
+        choices=("none", "nvidia", "jetson", "tenstorrent"),
+        default="none",
+        help="sample accelerator temperature, power, and clocks during each trial",
+    )
+    parser.add_argument("--telemetry-device", type=int, default=0)
+    parser.add_argument("--telemetry-interval-ms", type=int, default=500)
     arguments = parser.parse_args()
     if arguments.power_sampler:
         raise SystemExit(
-            "--power-sampler is reserved for the hardware integration pass; "
-            "energy measurement is not implemented"
+            "--power-sampler has been replaced by --telemetry-provider"
+        )
+    if arguments.telemetry_device < 0 or arguments.telemetry_interval_ms < 100:
+        raise SystemExit(
+            "telemetry device must be non-negative and interval at least 100 ms"
         )
 
     backend_specs = [item.strip() for item in arguments.backends.split(",") if item.strip()]
@@ -332,6 +349,7 @@ def main() -> int:
     stage_rows = []
     memory_rows = []
     hardware_rows = []
+    telemetry_samples = []
     cuda_timing_enabled = False
     nvtx_enabled = False
     static_sizes = bank_sizes(arguments.bank)
@@ -349,14 +367,33 @@ def main() -> int:
                     f"trial={trial}/{arguments.trials}",
                     flush=True,
                 )
-                trial_records = run_benchmark(
-                    arguments.rag_bench, arguments.bank, arguments.queries,
-                    arguments.expected, backend_spec,
-                    batch=batch, warmup=arguments.warmup, iterations=arguments.iters,
-                    threshold=threshold,
-                    raw_output=(arguments.results / "raw" /
-                                f"{safe_backend}-b{batch}-run{trial:02}.csv"),
-                )
+                sampler = None
+                if arguments.telemetry_provider != "none":
+                    sampler = TelemetrySampler(
+                        arguments.telemetry_provider,
+                        arguments.telemetry_device,
+                        arguments.telemetry_interval_ms,
+                    )
+                    sampler.start()
+                try:
+                    trial_records = run_benchmark(
+                        arguments.rag_bench, arguments.bank, arguments.queries,
+                        arguments.expected, backend_spec,
+                        batch=batch, warmup=arguments.warmup,
+                        iterations=arguments.iters, threshold=threshold,
+                        raw_output=(arguments.results / "raw" /
+                                    f"{safe_backend}-b{batch}-run{trial:02}.csv"),
+                    )
+                finally:
+                    if sampler is not None:
+                        for sample in sampler.stop():
+                            sample.update({
+                                "backend": backend,
+                                "precision": precision,
+                                "batch": str(batch),
+                                "trial": str(trial),
+                            })
+                            telemetry_samples.append(sample)
                 for record in trial_records:
                     record["_trial"] = str(trial)
                 records.extend(trial_records)
@@ -428,6 +465,10 @@ def main() -> int:
     write_csv(arguments.results / "rag_memory_layer.csv", MEMORY_FIELDS, memory_rows)
     write_csv(arguments.results / "rag_hardware_layer.csv", HARDWARE_FIELDS,
               hardware_rows)
+    write_csv(arguments.results / "rag_telemetry.csv", TELEMETRY_FIELDS,
+              telemetry_samples)
+    write_csv(arguments.results / "rag_thermal_layer.csv", THERMAL_FIELDS,
+              summarize_telemetry(telemetry_samples))
 
     manifest = {
         "schema": "rag-benchmark-manifest-v3",
@@ -443,6 +484,12 @@ def main() -> int:
         "instrumentation": {
             "cuda_event_timing": cuda_timing_enabled,
             "nvtx": nvtx_enabled,
+            "telemetry": {
+                "provider": arguments.telemetry_provider,
+                "device": arguments.telemetry_device,
+                "interval_ms": arguments.telemetry_interval_ms,
+                "scope": "entire benchmark child process per trial",
+            },
         },
         "files": {
             name: {"path": str(path.resolve()), "sha256": file_sha256(path)}
