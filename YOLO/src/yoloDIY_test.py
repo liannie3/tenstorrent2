@@ -119,7 +119,7 @@ def display_results(stage_wall_timings,num_images, batch_size, device):
     for stage in STAGES: #for each stage
         total_time = 0.0
         for step, vals in timings[stage].items(): #loop through each stage's dictionary
-            per_img = np.median(vals) #TODO: could also use mean, but median is serviceable for 1 batch size
+            per_img = np.median(vals)/batch_size #TODO: could also use mean, but median is serviceable for 1 batch size
             total_time += per_img #track total time for stage
             rows.append( {"timestamp": timestamp, "script" : "stage_by_stage", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
                                           "stage" : stage, "step" :step, "ms" : per_img } )
@@ -430,7 +430,9 @@ def run_pipeline(model, img_paths, batch_size: int = BATCH_SIZE, device = DEVICE
         store_results(csv_rows)
     return results
     
-def main(setting, img_dir):
+def main(setting, img_dir, batch_size : int = 1):
+
+    global BATCH_SIZE; BATCH_SIZE = batch_size
     #VALIDATE IMAGE PATH
     img_dir = Path(img_dir).expanduser().resolve()
     if not img_dir.exists():
@@ -490,6 +492,7 @@ def main(setting, img_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile"])
+    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile"] )
+    parser.add_argument("batch_size", type = int,  choices = [1,2,4,8,16] )
     args = parser.parse_args()
-    main(args.setting, Path(__file__).parent.parent/ "input_images" / "CAM_FRONT")
+    main(args.setting, Path(__file__).parent.parent/ "input_images" / "CAM_FRONT", args.batch_size)
