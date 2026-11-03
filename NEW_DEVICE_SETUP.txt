@@ -109,6 +109,9 @@ regenerated if you want to replace it:
 
   python tools/generate_corpus.py
 
+This generates the 3,400-entry paper-comparison baseline (about 1.4 GB with
+full visual payloads). For a quick smoke fixture only, add --entries 8.
+
 To create a bank from real project data:
 
   python tools/build_bank.py entries.jsonl memory.bank --metadata bank_metadata.json

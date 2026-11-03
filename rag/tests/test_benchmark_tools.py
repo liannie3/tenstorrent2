@@ -52,19 +52,56 @@ def main():
         data = root / "data"
         results = root / "results"
         subprocess.run(
-            [sys.executable, str(tools / "generate_corpus.py"), "--output", str(data)],
+            [
+                sys.executable,
+                str(tools / "generate_corpus.py"),
+                "--output",
+                str(data),
+                "--entries",
+                "8",
+            ],
             check=True,
         )
         generated = [data / "bank.bin", data / "queries.f32", data / "expected.json"]
         first_hashes = [hashlib.sha256(path.read_bytes()).digest() for path in generated]
         subprocess.run(
-            [sys.executable, str(tools / "generate_corpus.py"), "--output", str(data)],
+            [
+                sys.executable,
+                str(tools / "generate_corpus.py"),
+                "--output",
+                str(data),
+                "--entries",
+                "8",
+            ],
             check=True,
             stdout=subprocess.DEVNULL,
         )
         assert first_hashes == [
             hashlib.sha256(path.read_bytes()).digest() for path in generated
         ]
+        variable_data = root / "variable-data"
+        subprocess.run(
+            [
+                sys.executable,
+                str(tools / "generate_corpus.py"),
+                "--output",
+                str(variable_data),
+                "--entries",
+                "3",
+                "--query-count",
+                "4",
+            ],
+            check=True,
+        )
+        variable_manifest = json.loads(
+            (variable_data / "bank.bin.json").read_text(encoding="utf-8")
+        )
+        assert variable_manifest["entries"] == 3
+        assert variable_manifest["metadata"]["entries"] == 3
+        variable_expected = json.loads(
+            (variable_data / "expected.json").read_text(encoding="utf-8")
+        )
+        assert variable_expected["query_count"] == 4
         subprocess.run(
             [
                 sys.executable,

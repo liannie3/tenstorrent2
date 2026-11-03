@@ -3,6 +3,10 @@
 This report contains quality-gated measurements for the standalone RAG
 subsystem. See the raw CSV files for full precision. 
 
+The paper-comparison baseline is a **3,400-entry memory bank**. Smaller banks,
+including the 8-entry corpus shown below, are smoke fixtures only and must not be
+reported as baseline NVIDIA or Tenstorrent performance.
+
 ## Run configuration
 
 | Field | Value |
@@ -13,7 +17,7 @@ subsystem. See the raw CSV files for full precision.
 | Backends | cpu |
 | Batch sizes | 1, 2, 4, 8, 16, 32, 64, 128 |
 | Query corpus | 128 queries |
-| Memory bank | 8 entries |
+| Memory bank | 8 entries (smoke fixture; not the paper-comparison baseline) |
 | Similarity threshold | 0.700 |
 | Independent trials | 10 |
 | Warmup iterations | 10 |

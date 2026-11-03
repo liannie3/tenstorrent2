@@ -11,8 +11,7 @@ from pathlib import Path
 
 from build_bank import TEXT_DIM, build
 
-
-DEFAULT_ENTRIES = 8
+DEFAULT_ENTRIES = 3_400
 DEFAULT_THRESHOLD = 0.7
 DEFAULT_QUERY_COUNT = 128
 
@@ -34,9 +33,11 @@ def float32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
-def make_queries(keys: list[list[float]]) -> list[list[float]]:
+def make_queries(
+    keys: list[list[float]], query_count: int = DEFAULT_QUERY_COUNT
+) -> list[list[float]]:
     queries = []
-    for query_index in range(DEFAULT_QUERY_COUNT - 1):
+    for query_index in range(query_count - 1):
         key = keys[query_index % len(keys)]
         queries.append([
             value + 0.01 * math.sin((query_index + 5) * (column + 1) * 0.017)
@@ -74,14 +75,23 @@ def expected_results(
     return results
 
 
-def generate(output: Path, threshold: float = DEFAULT_THRESHOLD) -> None:
+def generate(
+    output: Path,
+    threshold: float = DEFAULT_THRESHOLD,
+    entries: int = DEFAULT_ENTRIES,
+    query_count: int = DEFAULT_QUERY_COUNT,
+) -> None:
+    if not 1 <= entries <= 1_000_000:
+        raise ValueError("entries must be between 1 and 1,000,000")
+    if query_count < 2:
+        raise ValueError("query count must be at least 2")
     output.mkdir(parents=True, exist_ok=True)
-    key_rows = [raw_key(entry) for entry in range(DEFAULT_ENTRIES)]
+    key_rows = [raw_key(entry) for entry in range(entries)]
     normalized_keys = [normalize(values) for values in key_rows]
     stored_keys = [
         [float32(value) for value in key] for key in normalized_keys
     ]
-    queries = make_queries(normalized_keys)
+    queries = make_queries(normalized_keys, query_count)
 
     with tempfile.TemporaryDirectory() as temporary_directory:
         temporary = Path(temporary_directory)
@@ -98,7 +108,11 @@ def generate(output: Path, threshold: float = DEFAULT_THRESHOLD) -> None:
         build(
             entries,
             output / "bank.bin",
-            {"generator": "generate_corpus.py", "dataset": "synthetic-v1"},
+            {
+                "generator": "generate_corpus.py",
+                "dataset": "synthetic-v1",
+                "entries": len(key_rows),
+            },
         )
 
     with (output / "queries.f32").open("wb") as query_file:
@@ -127,5 +141,22 @@ if __name__ == "__main__":
         default=Path(__file__).resolve().parents[1] / "bench_data",
     )
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument(
+        "--entries",
+        type=int,
+        default=DEFAULT_ENTRIES,
+        help="number of memory-bank entries (default: 3400 paper baseline)",
+    )
+    parser.add_argument(
+        "--query-count",
+        type=int,
+        default=DEFAULT_QUERY_COUNT,
+        help="number of queries (default: 128)",
+    )
     arguments = parser.parse_args()
-    generate(arguments.output, arguments.threshold)
+    generate(
+        arguments.output,
+        arguments.threshold,
+        arguments.entries,
+        arguments.query_count,
+    )
