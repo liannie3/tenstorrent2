@@ -125,3 +125,12 @@ baseline. Nsight Systems captures are diagnostic and are not a source of percent
 | CPU reference | FP32 | 32 | — | — | — | — | — | — |
 | CPU reference | FP32 | 64 | — | — | — | — | — | — |
 | CPU reference | FP32 | 128 | — | — | — | — | — | — |
+
+## Thermal telemetry
+
+Temperature, power, and clock samples are collected out-of-band for the complete child
+process of each trial. They include initialization and are not used to derive application
+latency or energy per query. Sampling errors remain visible rather than becoming zeros.
+
+| Backend | Precision | Batch | Provider | Samples/errors | Initial temperature (°C) | Mean temperature (°C) | Maximum temperature (°C) | Thermal rise (°C) | Throttled samples | Mean power (W) | Mean core clock (MHz) |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
