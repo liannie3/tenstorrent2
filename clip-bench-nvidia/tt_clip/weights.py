@@ -2,6 +2,8 @@ from loguru import logger
 import ttnn
 import torch
 
+from device import get_device
+
 def convert_model_to_ttnn(state_dict):
     """
     Convert a PyTorch model's state dictionary to TT-NN format.
