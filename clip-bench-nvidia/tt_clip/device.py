@@ -2,6 +2,8 @@ import ttnn
 import torch                                 
 from transformers import CLIPVisionModel 
 
+device = None   # module-level handle; open_ttnn() fills it in
+
 def open_ttnn():
     """Initialize TT-NN device with specified L1 cache size."""
     global device
@@ -12,8 +14,8 @@ def close_ttnn():
     global device
     if device is not None:
         ttnn.close_device(device)
+        device = None
 
 def get_device():
     """Get the current TT-NN device handle."""
-    global device
     return device
