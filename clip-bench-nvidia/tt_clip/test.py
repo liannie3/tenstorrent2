@@ -1,3 +1,6 @@
 import device
 
-print(f'Device Name: {device.get_device()}')
+device.open_ttnn()
+dev = device.get_device()
+print(dev)
+device.close_ttnn()

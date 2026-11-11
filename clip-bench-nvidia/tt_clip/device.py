@@ -1,6 +1,6 @@
-import ttnn                                 
-import torch                                 
-from transformers import CLIPVisionModel 
+import ttnn
+import torch
+from transformers import CLIPVisionModel
 
 device = None   # module-level handle; open_ttnn() fills it in
 
