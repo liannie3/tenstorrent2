@@ -1,5 +1,5 @@
 from loguru import logger
-import ttn
+import ttnn
 import torch
 
 def convert_model_to_ttnn(state_dict):
