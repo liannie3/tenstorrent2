@@ -1,0 +1,17 @@
+# ======================================= #
+# AUTHOR:          Travis Mora
+# ORGANIZATION:    Texas A&M University
+# FILE:            tt.yaml
+# CREATED:         11/8/2026
+# REVISION:        1.0
+# ======================================= #
+
+## YAML file for Tenstorrent Blackhole p150a
+
+run:
+  target: tenstorrent            # run with clipbench/run_tt.py
+  device:                    
+  precision: fp16                # data type
+
+output:
+  results_dir: results/tt        # directory for result data
