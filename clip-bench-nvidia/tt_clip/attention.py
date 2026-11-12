@@ -100,7 +100,10 @@ class MultilayerPerceptron:
 
     def forward(self, x):
         x = ttnn.linear(x, self.mlp_c_fc_weight, bias=self.mlp_c_fc_bias, transpose_b=True)
-        x = ttnn.gelu(x)
+        
+        # x = ttnn.gelu(x)
+        x = x * ttnn.sigmoid(x*1.702)   # GELU --> QuickGELU, OpenAI trained on QuickGELU (https://huggingface.co/spaces/HtSimple/ImageSearch/blame/c859bb5db8d96d446afa2b9dd00b236f36f98f3f/CLIPTool/CLIP/model.py)
+
         x = ttnn.linear(x, self.mlp_c_proj_weight, bias=self.mlp_c_proj_bias, transpose_b=True)
         return x
 
