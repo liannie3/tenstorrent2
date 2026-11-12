@@ -19,9 +19,17 @@ class VisionTransformer:
         # Weights preparation for convolution (ttnn.conv2d) must be done on host (CPU)
         # To that end, we move convolution weights from device to host and perform its
         # layout to Row-Major, which is the preferred layout for TT-NN convolution kernels.
-        self.conv1_weights = ttnn.from_device(state_dict[conv2_state_dict_name])
-        self.conv1_weights = ttnn.to_dtype(self.conv1_weights, dtype=ttnn.bfloat16)
-        self.conv1_weights = ttnn.to_layout(self.conv1_weights, layout=ttnn.ROW_MAJOR_LAYOUT)
+        conv1_weights = ttnn.from_device(state_dict[conv2_state_dict_name])
+        conv1_weights = ttnn.to_dtype(self.conv1_weights, dtype=ttnn.bfloat16)
+        conv1_weights = ttnn.to_layout(self.conv1_weights, layout=ttnn.ROW_MAJOR_LAYOUT)
+
+        # UPDATED:
+        # Originally, conv1_weights was a local variables and would be used in forward and then was overwritten with the prepared result. 
+        # The next run then occurred and used the prepared weights and not the original weights. Therefore an error was thrown.
+        # This method stops this. The conv1_weights are computed a single time and stored in the dictionary to be used across multiple runs.
+        
+        self.conv1_weights_host = conv1_weights   
+        self._conv1_prepared = {}
 
         # Layer normalization applied before transformer layers
         self.ln_pre_weights = state_dict["vision_model.pre_layrnorm.weight"]
@@ -57,40 +65,45 @@ class VisionTransformer:
         x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
 
         # Output channels for patch embedding (standard ViT uses 768)
-        out_channels = 768
+        #out_channels = 768
 
-        self.conv1_weights = ttnn.prepare_conv_weights(
-            weight_tensor=self.conv1_weights,
-            input_memory_config=x.memory_config(),
-            input_layout=x.layout,
-            weights_format="OIHW",
-            in_channels=in_channels,
-            out_channels=out_channels,
-            batch_size=batch_size,
-            input_height=height,
-            input_width=width,
-            kernel_size=[self.patch_size, self.patch_size],
-            stride=[self.patch_size, self.patch_size],
-            padding=[0, 0],
-            dilation=[1, 1],
-            has_bias=False,
-            groups=1,
-            device=get_device(),
-            input_dtype=x.dtype
-        )
+        # UPDATED: Set out_channels to vision_width as this is 1024 for the CLIP-ViT-L-14/336px Model
+        out_channels = self.vision_width  # Should Return 1024
+        
+        key = (batch_size, height, width)
+        if key not in self._conv1_prepared:
+            self.conv_prepared[key] = ttnn.prepare_conv_weights(
+                weight_tensor=self.conv1_weights_host,
+                input_memory_config=x.memory_config(),
+                input_layout=x.layout,
+                weights_format="OIHW",
+                in_channels=in_channels,
+                out_channels=out_channels,
+                batch_size=batch_size,
+                input_height=height,
+                input_width=width,
+                kernel_size=[self.patch_size, self.patch_size],
+                stride=[self.patch_size, self.patch_size],
+                padding=[0, 0],
+                dilation=[1, 1],
+                has_bias=False,
+                groups=1,
+                device=get_device(),
+                input_dtype=x.dtype
+            )
 
         # Step 3: Apply patch embedding convolution
         # This converts the 2D image into a sequence of patch embeddings
-        # For patch_size=32 and image 224x224: creates (224/32)^2 = 49 patches
+        # For patch_size=14 and image 336x336: creates (336/14)^2 = 576 patches
         x = ttnn.conv2d(
             input_tensor=x,
-            weight_tensor=self.conv1_weights,
+            weight_tensor=self.conv1_weights_host,
             in_channels=in_channels,  # Input channels (3 for RGB)
-            out_channels=out_channels,  # Embedding dimension (768)
+            out_channels=out_channels,  # Embedding dimension (1024)
             batch_size=batch_size,
             input_height=height,
             input_width=width,
-            kernel_size=(self.patch_size, self.patch_size),  # Patch size (e.g., 32x32)
+            kernel_size=(self.patch_size, self.patch_size),  # Patch size (e.g., 14x14)
             stride=(self.patch_size, self.patch_size),  # Non-overlapping patches: stride = kernel_size
             padding=(0, 0),  # No padding needed
             dilation=(1, 1),  # Standard convolution (no dilation)
@@ -104,7 +117,7 @@ class VisionTransformer:
         # Convert to tile layout for subsequent operations (TT-NN's optimized 2D tiled format)
         x = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT)
         # Unflatten: [1, 1, N*H_out*W_out, C_out] -> [N, num_patches, embed_dim]
-        # where num_patches = H_out * W_out = (224/32)^2 = 49
+        # where num_patches = H_out * W_out = (336/14)^2 = 576
 
         x = ttnn.reshape(x, (x.shape[0], x.shape[1] * x.shape[2], x.shape[3]))
 
@@ -124,7 +137,7 @@ class VisionTransformer:
 
         # Step 7: Prepend class token to patch sequence
         # [batch, 1, embed] + [batch, num_patches, embed] -> [batch, num_patches+1, embed]
-        # This creates: [[CLS], patch_1, patch_2, ..., patch_49]
+        # This creates: [[CLS], patch_1, patch_2, ..., patch_576]
         x = ttnn.concat([class_embedding, x], dim=1, memory_config=None)
 
         # Step 8: Add positional embeddings
