@@ -7,14 +7,13 @@ class VisionTransformer:
     def __init__(self, state_dict, num_vision_layers):
         self.output_dim = 0
 
-        conv2_state_dict_name = "vision_model.embeddings.patch_embedding.weight"
+        conv2_state_dict_name = "embeddings.patch_embedding.weight"
         self.vision_width = state_dict[conv2_state_dict_name].shape[0]
         self.patch_size = state_dict[conv2_state_dict_name].shape[-1]
         self.vision_heads = self.vision_width // 64
 
-        self.class_embedding = state_dict["vision_model.embeddings.class_embedding"]
-        self.positional_embedding = state_dict["vision_model.embeddings.position_embedding.weight"]
-        self.proj = state_dict["visual_projection.weight"]
+        self.class_embedding = state_dict["embeddings.class_embedding"]
+        self.positional_embedding = state_dict["embeddings.position_embedding.weight"]
 
         # Weights preparation for convolution (ttnn.conv2d) must be done on host (CPU)
         # To that end, we move convolution weights from device to host and perform its
@@ -24,23 +23,23 @@ class VisionTransformer:
         conv1_weights = ttnn.to_layout(conv1_weights, layout=ttnn.ROW_MAJOR_LAYOUT)
 
         # UPDATED:
-        # Originally, conv1_weights was a local variables and would be used in forward and then was overwritten with the prepared result. 
+        # Originally, conv1_weights was a local variables and would be used in forward and then was overwritten with the prepared result.
         # The next run then occurred and used the prepared weights and not the original weights. Therefore an error was thrown.
         # This method stops this. The conv1_weights are computed a single time and stored in the dictionary to be used across multiple runs.
-        
-        self.conv1_weights_host = conv1_weights   
+
+        self.conv1_weights_host = conv1_weights
         self._conv1_prepared = {}
 
         # Layer normalization applied before transformer layers
-        self.ln_pre_weights = state_dict["vision_model.pre_layrnorm.weight"]
-        self.ln_pre_bias = state_dict["vision_model.pre_layrnorm.bias"]
+        self.ln_pre_weights = state_dict["pre_layrnorm.weight"]
+        self.ln_pre_bias = state_dict["pre_layrnorm.bias"]
 
-        # Layer normalization applied after transformer layers (to class token)
-        self.ln_post_weights = state_dict["vision_model.post_layernorm.weight"]
-        self.ln_post_bias = state_dict["vision_model.post_layernorm.bias"]
+        # Layer normalization applied after transformer layers (to class token)    UPDATE: NO LONGER USED
+        #self.ln_post_weights = state_dict["post_layernorm.weight"]
+        #self.ln_post_bias = state_dict["vision_model.post_layernorm.bias"]
 
         self.transformer = Transformer(
-            state_dict, num_layers=num_vision_layers, num_heads=self.vision_heads, attention_mask=None, prefix="vision_model.encoder"
+            state_dict, num_layers=num_vision_layers, num_heads=self.vision_heads, attention_mask=None, prefix="encoder"
         )
 
     def forward(self, x):

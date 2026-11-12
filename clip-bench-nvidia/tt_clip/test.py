@@ -10,7 +10,7 @@ from device import open_ttnn, close_ttnn, get_device
 from loaders import download_model            # returns CLIPVisionModel
 from weights import convert_model_to_ttnn
 from preprocess import preprocess_image
-from embeddings import TtClipVisionModel
+from embeddings import TTClipVisionModel
 
 # Run from anywhere:  python test.py
 # Other images:       python test.py --images ~/images/a.jpg ~/images/b.jpg ~/images/c.jpg
@@ -46,7 +46,7 @@ print(f"hidden_act = {hf_model.config.hidden_act}")   # should be quick_gelu
 
 open_ttnn()                                     # must come before weight conversion
 try:
-    model = TtClipVisionModel(convert_model_to_ttnn(hf_model.state_dict()), num_layers=NUM_LAYERS)
+    model = TTClipVisionModel(convert_model_to_ttnn(hf_model.state_dict()), num_layers=NUM_LAYERS)
 
     def to_tt(pixels):
         return ttnn.from_torch(pixels, dtype=ttnn.bfloat16,
