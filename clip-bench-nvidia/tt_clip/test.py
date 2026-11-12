@@ -7,7 +7,7 @@ import ttnn
 from PIL import Image
 
 from device import open_ttnn, close_ttnn, get_device
-from tokenizer import download_model            # returns CLIPVisionModel
+from loaders import download_model            # returns CLIPVisionModel
 from weights import convert_model_to_ttnn
 from preprocess import preprocess_image
 from embeddings import TtClipVisionModel
