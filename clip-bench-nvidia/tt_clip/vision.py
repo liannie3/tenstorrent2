@@ -20,8 +20,8 @@ class VisionTransformer:
         # To that end, we move convolution weights from device to host and perform its
         # layout to Row-Major, which is the preferred layout for TT-NN convolution kernels.
         conv1_weights = ttnn.from_device(state_dict[conv2_state_dict_name])
-        conv1_weights = ttnn.to_dtype(self.conv1_weights, dtype=ttnn.bfloat16)
-        conv1_weights = ttnn.to_layout(self.conv1_weights, layout=ttnn.ROW_MAJOR_LAYOUT)
+        conv1_weights = ttnn.to_dtype(conv1_weights, dtype=ttnn.bfloat16)
+        conv1_weights = ttnn.to_layout(conv1_weights, layout=ttnn.ROW_MAJOR_LAYOUT)
 
         # UPDATED:
         # Originally, conv1_weights was a local variables and would be used in forward and then was overwritten with the prepared result. 
@@ -72,7 +72,7 @@ class VisionTransformer:
         
         key = (batch_size, height, width)
         if key not in self._conv1_prepared:
-            self.conv_prepared[key] = ttnn.prepare_conv_weights(
+            self._conv_prepared[key] = ttnn.prepare_conv_weights(
                 weight_tensor=self.conv1_weights_host,
                 input_memory_config=x.memory_config(),
                 input_layout=x.layout,
@@ -97,7 +97,7 @@ class VisionTransformer:
         # For patch_size=14 and image 336x336: creates (336/14)^2 = 576 patches
         x = ttnn.conv2d(
             input_tensor=x,
-            weight_tensor=self.conv1_weights_host,
+            weight_tensor=self._conv1_prepared[key],
             in_channels=in_channels,  # Input channels (3 for RGB)
             out_channels=out_channels,  # Embedding dimension (1024)
             batch_size=batch_size,
@@ -159,16 +159,6 @@ class VisionTransformer:
 
         # Step 12: Permute back to batch-first format
         # [sequence_size, batch_size, hidden_size] -> [batch_size, sequence_size, hidden_size]
-        x = ttnn.permute(x, (1, 0, 2))
-
-        # Step 13: Extract [CLS] token and apply post-layer normalization
-        # In ViT, the [CLS] token (first token) is used for classification
-        # x[:, 0, :] extracts the [CLS] token: [batch, seq_len, embed] -> [batch, embed]
-        x = ttnn.layer_norm(x[:, 0, :], weight=self.ln_post_weights, bias=self.ln_post_bias)
-
-        # Step 14: Project to final embedding space (optional projection layer)
-        # Maps from hidden dimension to the shared vision-language embedding space
-        if self.proj is not None:
-            x = ttnn.matmul(x, self.proj, transpose_b=True)
+        x = ttnn.permute(x, (1, 0, 2)) 
 
         return x

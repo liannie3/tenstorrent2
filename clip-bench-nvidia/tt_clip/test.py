@@ -13,7 +13,7 @@ from embeddings import CLIP
 
 # Run from anywhere:  python test.py
 # Other images:       python test.py --images ~/images/a.jpg ~/images/b.jpg --texts "a photo of a car" "a photo of a tree"
-MODEL = "openai/clip-vit-base-patch32"
+MODEL = "openai/clip-vit-large-patch14-336"     # Updated model
 HERE = Path(__file__).resolve().parent          # the tt_clip folder
 
 parser = argparse.ArgumentParser()
@@ -40,7 +40,7 @@ try:
     tokens_tt = ttnn.from_torch(ids, dtype=ttnn.int32, layout=ttnn.TILE_LAYOUT, device=get_device())
 
     for path in image_paths:
-        pixels = preprocess_image(Image.open(path), 224).unsqueeze(0)    # [1, 3, 224, 224]
+        pixels = preprocess_image(Image.open(path), 336).unsqueeze(0)    # [1, 3, 336, 336]
         image_tt = ttnn.from_torch(pixels, dtype=ttnn.bfloat16,
                                    layout=ttnn.TILE_LAYOUT, device=get_device())
 
