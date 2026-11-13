@@ -71,7 +71,7 @@ class VisionTransformer:
         
         key = (batch_size, height, width)
         if key not in self._conv1_prepared:
-            self._conv_prepared[key] = ttnn.prepare_conv_weights(
+            self._conv1_prepared[key] = ttnn.prepare_conv_weights(
                 weight_tensor=self.conv1_weights_host,
                 input_memory_config=x.memory_config(),
                 input_layout=x.layout,

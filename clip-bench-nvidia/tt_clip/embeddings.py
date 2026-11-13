@@ -8,9 +8,8 @@ from attention import Transformer
 
 
 class TTClipVisionModel:
-    class __init__:
-        def __init__(self, state_dict, num_layers):
-            self.visual = VisionTransformer(state_dict, num_vision_layers=num_layers)
+    def __init__(self, state_dict, num_layers):
+        self.visual = VisionTransformer(state_dict, num_vision_layers=num_layers)
 
 
     def forward(self, image):
