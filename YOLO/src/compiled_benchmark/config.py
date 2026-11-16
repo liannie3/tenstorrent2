@@ -41,8 +41,9 @@ IMGSZ = 640 #640 px
 BATCH_SIZE = 1 #set to 1 by default in ultralytics predict func
 CONF_THRES = 0.25 #confindence threshold for NMS 
 IOU_THRESH = 0.70 #intersection over union threshold for NMS
-FP16 = False
-
+DTYPE = torch.bfloat16 #set datatype to bf16 to match TT harness 
+                       #TODO: inqure if a good idea to test torch.float32 for a baseline and golden reference point
+                       
 COMPILE_WARMUP = 2 #indicates the need for warming up on the first and second calls to compilation WITHOUT timing
                    #1st is the compilation of all graphs, 2nd is the recompilation of detect's head
                    #TODO: see if TT wants to compare compilation times between TT and CUDA

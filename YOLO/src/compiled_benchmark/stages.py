@@ -8,7 +8,7 @@ from ultralytics.data.augment import LetterBox #ultralytics preprocess function 
                                                #additionally updates labels & bounding boxes respectively 
 from ultralytics.utils.nms import non_max_suppression #ultralyitics post process function that applies NMS on prediction results
                                                       #motivated to filter overlapping bounding boxes based on confidence and IoU (intersection over union) threshhold 
-from ultralytics.utils.ops import scale_boxes #ultralyitics utility function that rescales bounding boxes from one image to another #NOTE: runs on CPU                                   
+from ultralytics.utils.ops import scale_boxes #ultralyitics utility function that rescales bounding boxes from one image to another                                   
 
 import config
 #imports both the timed wrapper function and the timings dictionary from timing
@@ -26,7 +26,7 @@ compiled = {} #holds the torch compiled versions of each gpu substage ("normaliz
 #            so read before timer starts
 #Passes a list of numpy tensors as im
 
-def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
+def preprocess_stage(im: list[np.ndarray], device = 'cuda:0'):
     store = timings["pre_processing"]
     orig_shapes = [x.shape for x in im]  #needed later by postprocess to rescale boxes
     
@@ -47,25 +47,25 @@ def preprocess_stage(im: list[np.ndarray], device = 'cuda:0', fp16 = False):
                 
     #PRE-PROCESS STEP C: host to memory transfer batch transfer to gpu
     with timed(store, "C_host_to_gpu", device):
-        im = im.to(device) #tranfer tensors to gpu
-
+        im = im.permute(0,3,1,2).flip(1).contiguous().to(device) #tranfer tensors to gpu
+        #NOTE: currently permute, flip, and contiguous added to match TT implementation which does these operations on host before transfer to device 
+        #      due to architectural limitations (primarily 32x32 memory tiles)
+        #TODO: confirm with SABY if this is something we should remove from testing, or rather a point to make on comparing the two architectures
+        
     #PRE-PROCESS STEP D: adjust and normalize tensor layout (GPU)
     with timed(store, "D_normalize_layout", device):
-        im = compiled["normalize"](im, fp16) #run normalization stage as one compiled graph
+        im = compiled["normalize"](im) #run normalization stage as one compiled graph
     
     return im, orig_shapes #return img tensor after pre processing is applied to it, and orignal tensor for post processing
 
 #consolidated the normalization substage's operations into a single function so it can be captured as its own graph during compilation
-def normalize_layout(im, fp16):
-    im = im.permute(0, 3, 1, 2) #transfer from torch standard BHWC (batch, height, width, channels)
+def normalize_layout(im):
+    #im = im.permute(0, 3, 1, 2) #transfer from torch standard BHWC (batch, height, width, channels)
                                 #to ultralytics standard BCHW (batch, channels, height, width) tensor dimension representation
-    if im.shape[1] == 3:
-        im = im.flip(1) # BGR to RGB if there are three channels
-    im = im.contiguous()  #allocate a new contiguous (i.e. uninterrupted) block of memory and copy data into it
-    if fp16:
-        im = im.half() #if fp16 (16 bit float), convert image pixels tensor from unint8 to fp16
-    else:
-        im = im.float() #if not fp16 convert image pixels tensor from uint8 to fp32 (32 bit float)
+    #if im.shape[1] == 3:
+    #    im = im.flip(1) # BGR to RGB if there are three channels
+    #im = im.contiguous()  #allocate a new contiguous (i.e. uninterrupted) block of memory and copy data into it
+    im = im.to(config.DTYPE) #unit8 -> bf16 on the GPU, matching TT's bf16
     im = im.div_(255) #normalize tensor pixels from [0.0 - 255.0] -> [0.0 - 1.0]
     return im
 
@@ -130,9 +130,11 @@ def postprocess_stage(preds, im, orig_shapes, conf_thres: float = 0.25, iou_thre
     #NOTE: NOT CAPTURED AS A COMPILED GRAPH since nms function contains code that breaks graph format
     #      Additionally shape of data would change from batch to batch requiring recompilation
     #TODO: TT implementation requires NMS be done on the CPU since varying input sizes breaks graph standards
+    
+    preds = preds[0] if isinstance(preds, (list, tuple)) else preds #run_pipeline passes the head's (preds, extras) tuple; hardware_substages passes the tensor
     with timed(store, "A_NMS", device):
         filtered_preds = non_max_suppression(   
-            preds,
+            preds.float(), #bf16 -> fp32 output format to match same percision as TT harness
             conf_thres,
             iou_thres,
             classes = None,

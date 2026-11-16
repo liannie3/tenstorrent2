@@ -50,24 +50,24 @@ def hw_monitor():
 ########################################################################################################################################################################
 
 @torch.inference_mode()
-def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE, device = config.DEVICE, fp16 = config.FP16):
+def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE, device = config.DEVICE):
     with hw_monitor() as monitor:
-        run.run_pipeline(model, img_paths, batch_size, device, fp16)
+        run.run_pipeline(model, img_paths, batch_size, device)
 
     results.store_hw_window(monitor, "full_pipeline", run.hw_window["start"], run.hw_window["end"])
 
 #test each substage in isolation over a fixed period and accumulates, averages, then stores associated hardware metrics
 @torch.inference_mode()
-def hardware_substages(model, images, device = config.DEVICE, fp16 = config.FP16):
+def hardware_substages(model, images, device = config.DEVICE):
     #prepare each stages inputs before metrics are gathered
     sample = images[:config.HW_SAMPLE_SIZE]
-    ims, shapes = preprocess_stage(sample,device,fp16)
+    ims, shapes = preprocess_stage(sample,device)
     preds = inference_stage(model, ims, device)[0] #grabs the tensor portion of inference output
 
     #lookup table to invoke each substage (and an idle for baseline) independently
     substages = {
         "idle": lambda i: time.sleep(0.01),
-        "pre_processing": lambda i: preprocess_stage(sample[i:i+1], device, fp16),
+        "pre_processing": lambda i: preprocess_stage(sample[i:i+1], device),
         "inference": lambda i: inference_stage(model, ims[i:i+1], device),
         "post_processing": lambda i: postprocess_stage(preds[i:i+1], ims[i:i+1], shapes[i:i+1], config.CONF_THRES, config.IOU_THRESH, device),
     }

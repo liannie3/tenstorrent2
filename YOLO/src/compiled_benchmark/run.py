@@ -25,7 +25,7 @@ def load_images(img_paths):
 
 @torch.inference_mode() #indicates not training, but for realistic performance
 #based on benchmark class from ultralytics/engine/predictor.py
-def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device = config.DEVICE, fp16 = config.FP16):
+def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device = config.DEVICE):
     #reset async timigns from previous runs
     reset()
 
@@ -42,7 +42,7 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
     #torch.compile compiles on the first call whatever the device
     #second call recompiles part of the Detect head once 
     for _ in range(config.COMPILE_WARMUP):
-        im, shapes = preprocess_stage(loaded[0], device, fp16) #warmup with first loaded batch
+        im, shapes = preprocess_stage(loaded[0], device) #warmup with first loaded batch
         predictions = inference_stage(model, im, device)
         postprocess_stage(predictions, im, shapes, config.CONF_THRES, config.IOU_THRESH, device)
     reset() #reset stored results from warmup
@@ -61,7 +61,7 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
         _sync(device) #isolates work between stages like accelerator.synchronize does in ultralytics profile
         t0 = time.perf_counter()
         torch.cuda.nvtx.range_push("preprocess") #add nvtx marker for nsys and ncu analysis of preprocess 
-        im, shapes = preprocess_stage(imgs, device, fp16)
+        im, shapes = preprocess_stage(imgs, device)
         torch.cuda.nvtx.range_pop() #records CPU timestamp and removes the most recent nvtx marker (pop_back)
         _sync(device)
         t1 = time.perf_counter() 
