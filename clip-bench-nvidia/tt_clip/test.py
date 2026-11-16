@@ -22,8 +22,9 @@ HERE = Path(__file__).resolve().parent          # the tt_clip folder
 parser = argparse.ArgumentParser()
 parser.add_argument("--images", nargs="+", default=[str(HERE / "cat.jpg"), str(HERE / "dog.jpg")],
                     help="image files (default: cat.jpg and dog.jpg next to this script)")
-parser.add_argument("--warmup", type=int, default=1, help="untimed runs on the first image")
-parser.add_argument("--iters", type=int, default=5, help="timed runs on the first image")
+parser.add_argument("--warmup", type=int, default=2, help="untimed runs on the first image")
+parser.add_argument("--iters", type=int, default=20, help="timed runs on the first image")
+parser.add_argument("--sweep", action="store_true", help="per-depth PCC sweep only, no timing")
 args = parser.parse_args()
 
 image_paths = [Path(p).expanduser() for p in args.images]
@@ -52,6 +53,18 @@ try:
         return ttnn.from_torch(pixels, dtype=ttnn.bfloat16,
                                layout=ttnn.TILE_LAYOUT, device=get_device())
 
+    if args.sweep:
+        # Per-depth PCC against HF hidden_states, to localize accuracy loss. Skips timing.
+        sd_tt = convert_model_to_ttnn(hf_model.state_dict())
+        pixels = load_pixels(image_paths[0])
+        with torch.no_grad():
+            hs = hf_model(pixel_values=pixels, output_hidden_states=True).hidden_states
+        for k in [0, 1, 2, 6, 12, 18, 23]:
+            m = TTClipVisionModel(sd_tt, num_layers=k)
+            out = ttnn.to_torch(m.forward(to_tt(pixels))).float().reshape(1, 576, 1024)
+            print(f"after {k:2d} layers: PCC={pcc(out, hs[k][:, 1:]):.5f}")
+        raise SystemExit
+
     # Correctness: one forward per image, compared against HF on CPU
     for path in image_paths:
         pixels = load_pixels(path)
@@ -64,8 +77,15 @@ try:
         tt_out = tt_out.reshape(ref.shape)
         print(f"{path.name}: PCC={pcc(tt_out, ref):.5f}  shape={tuple(tt_out.shape)}")
 
-    # Timing: first image only, after warmup (warmup absorbs weight prep + kernel compile)
+    # Timing: first image only. Input is already on the device, so this is pure device
+    # latency (no preprocessing, no host<->device copies in the timed region).
     image_tt = to_tt(load_pixels(image_paths[0]))
+
+    # The first forward pays weight prep + kernel compile; report it separately.
+    start = time.perf_counter()
+    ttnn.deallocate(model.forward(image_tt))
+    ttnn.synchronize_device(get_device())
+    cold_ms = 1000 * (time.perf_counter() - start)
 
     for _ in range(args.warmup):
         ttnn.deallocate(model.forward(image_tt))
@@ -76,10 +96,15 @@ try:
         start = time.perf_counter()
         out = model.forward(image_tt)
         ttnn.synchronize_device(get_device())   # TT-NN ops are async
-        times.append(time.perf_counter() - start)
+        times.append(1000 * (time.perf_counter() - start))
         ttnn.deallocate(out)
 
-    print(f"\nlatency over {args.iters} runs: mean={1000 * sum(times) / len(times):.1f} ms  "
-          f"min={1000 * min(times):.1f} ms")
+    times_sorted = sorted(times)
+    mean = sum(times) / len(times)
+    median = times_sorted[len(times) // 2]
+    print(f"\ncold first run : {cold_ms:.1f} ms (includes compile)")
+    print(f"warm latency over {args.iters} runs: mean={mean:.1f} ms  median={median:.1f} ms  "
+          f"min={times_sorted[0]:.1f} ms  max={times_sorted[-1]:.1f} ms")
+    print(f"throughput     : {1000 / mean:.2f} images/s (batch 1)")
 finally:
     close_ttnn()
