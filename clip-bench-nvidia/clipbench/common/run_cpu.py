@@ -8,9 +8,9 @@
 
 """CPU runner. Times every stage in-process with time.perf_counter_ns.
 
-    python -m clipbench.run_cpu --profile cpu
+    python -m clipbench.common.run_cpu --profile cpu
 
-run_nvidia.py is a separate file on purpose: it measures a different way (NVTX
+nvidia/run.py is a separate file on purpose: it measures a different way (NVTX
 ranges read back by nsys), and the timing calls are the only thing that differs,
 so they sit right next to the work they measure instead of behind a wrapper.
 """
@@ -24,7 +24,7 @@ import torch
 from . import config as cfg
 from . import data
 from . import model as model_lib
-from .reports.schema_cpu import write_manifest, write_stage_csvs
+from .schema_cpu import write_manifest, write_stage_csvs
 
 
 ## One sub-test: every frame, at a single view count. One iteration is frame i
@@ -126,7 +126,7 @@ def main(argv=None):
     if run['target'] != 'cpu':
         raise SystemExit(
             f"profile {args.profile!r} has run.target {run['target']!r} - run it with:\n"
-            f'  python -m clipbench.run_nvidia --profile {args.profile}'
+            f'  python -m clipbench.nvidia.run --profile {args.profile}'
         )
 
     print(f"profile: {config['profile']}  device: {run['device']}  "

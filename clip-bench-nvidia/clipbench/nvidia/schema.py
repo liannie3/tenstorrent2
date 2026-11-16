@@ -1,12 +1,12 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            schema_nvidia.py
+# FILE:            schema.py
 # CREATED:         10/20/2026
 # REVISION:        1.0
 # ======================================= #
 
-"""Files written by run_nvidia.py: one CSV per stage, plus a manifest.
+"""Files written by nvidia/run.py: one CSV per stage, plus a manifest.
 
 Same columns as schema_cpu.py, plus an nvtx_ms column merged in from an nsys
 capture and the Jetson power mode in the manifest.
@@ -29,7 +29,7 @@ NVTX_COLUMN = 'nvtx_ms'
 ## (views, iter, view) identifies a row -- what the nvtx merge keys on
 KEY_WIDTH = 3
 
-## run_nvidia.py sets this on the child it launches under `nsys profile`
+## nvidia/run.py sets this on the child it launches under `nsys profile`
 NSYS_ENV_GUARD = 'CLIPBENCH_UNDER_NSYS'
 
 

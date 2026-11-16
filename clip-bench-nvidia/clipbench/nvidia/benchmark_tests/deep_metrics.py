@@ -16,11 +16,11 @@ from pathlib import Path
 import torch
 from torch.cuda import nvtx
 
-from .. import config as cfg
-from .. import data
-from .. import model as model_lib
-from ..reports import nsys as nsys_report
-from ..reports.schema_nvidia import NSYS_ENV_GUARD, merge_nvtx_column, under_nsys
+from ...common import config as cfg
+from ...common import data
+from ...common import model as model_lib
+from .. import nsys as nsys_report
+from ..schema import NSYS_ENV_GUARD, merge_nvtx_column, under_nsys
 
 
 ## Ranges are this test's only measurement, so no NVTX means nothing to record
@@ -32,7 +32,7 @@ def require_nvtx():
         raise RuntimeError('NVTX unavailable - run the latency test instead') from exc
 
 
-## Keep in step with RANGE_PATTERN in clipbench/reports/nsys.py.
+## Keep in step with RANGE_PATTERN in clipbench/nvidia/nsys.py.
 ## view -1 means all views, for ranges that span the whole rig.
 def push(stage, views, view):
     nvtx.range_push(f'{stage}/v={views}/view={view}')
@@ -114,7 +114,7 @@ def should_capture():
     return not under_nsys()
 
 
-## Relaunch run_nvidia under nsys so the NVTX ranges get collected. child_args
+## Relaunch nvidia/run.py under nsys so the NVTX ranges get collected. child_args
 ## is what main() wants forwarded, e.g. ['--profile', 'jetson', '--test', 'nvtx'].
 ## Returns the .nsys-rep, or None if nsys is not installed.
 def capture_under_nsys(config, child_args):
@@ -127,14 +127,14 @@ def capture_under_nsys(config, child_args):
     #### IMPORTANT: DETERMINES THE FLAGS FOR NSYS PROFILE. SEE NSYS DOCS FOR MORE INFO ####
     ## nsys profile <flags> <command>. Everything from sys.executable on is the
     ## child nsys launches and traces; cwd=PROJECT_ROOT below is what makes
-    ## -m clipbench.run_nvidia importable.
+    ## -m clipbench.nvidia.run importable.
     cmd = ['nsys', 'profile',
            '--trace=cuda,nvtx',                           # kernels, memcpys, and our ranges -- nothing else
            '--sample=process-tree',
            '--cpuctxsw=process-tree',                     # need perf_event access we may not have
            '--force-overwrite', 'true',                   # else nsys exits nonzero on the second run
            '--output', str(capture),                      # base path; nsys appends .nsys-rep
-           sys.executable, '-m', 'clipbench.run_nvidia',  # same interpreter and venv as the parent
+           sys.executable, '-m', 'clipbench.nvidia.run',  # same interpreter and venv as the parent
            *child_args]
 
     env = dict(os.environ)                          # Builds the env the child process will run on

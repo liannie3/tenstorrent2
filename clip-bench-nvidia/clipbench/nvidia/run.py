@@ -1,7 +1,7 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            run_nvidia.py
+# FILE:            run.py
 # CREATED:         10/19/2026
 # REVISION:        2.0
 # ======================================= #
@@ -11,7 +11,7 @@
     sudo nvpmodel -m 0        # MAXN -- do this before benchmarking
     sudo jetson_clocks        # pin clocks so sub-tests are comparable
 
-    python -m clipbench.run_nvidia --profile jetson
+    python -m clipbench.nvidia.run --profile jetson
 
 Runs four tests, each into its own subdirectory of output.results_dir:
 
@@ -38,12 +38,12 @@ from pathlib import Path
 
 import torch
 
-from . import config as cfg
-from . import data
-from . import model as model_lib
+from ..common import config as cfg
+from ..common import data
+from ..common import model as model_lib
 from .benchmark_tests import (cpu_pure_latency, deep_metrics, gpu_pure_latency,
                               hardware_perf)
-from .reports.schema_nvidia import under_nsys, write_manifest, write_stage_csvs
+from .schema import under_nsys, write_manifest, write_stage_csvs
 
 
 
@@ -84,16 +84,16 @@ def main(argv=None):
     if run['target'] != 'nvidia':
         raise SystemExit(
             f"profile {args.profile!r} has run.target {run['target']!r} - run it with:\n"
-            f'  python -m clipbench.run_cpu --profile {args.profile}'
+            f'  python -m clipbench.common.run_cpu --profile {args.profile}'
         )
 
     ## Checks if CUDA is available
     if not torch.cuda.is_available():
         raise SystemExit(
-            'run_nvidia.py times the GPU stages with CUDA events and needs a working '
+            'clipbench.nvidia.run times the GPU stages with CUDA events and needs a working '
             'CUDA device, but torch.cuda.is_available() is False.\n'
             'For a CPU-only run use:\n'
-            '  python -m clipbench.run_cpu --profile cpu'
+            '  python -m clipbench.common.run_cpu --profile cpu'
         )
 
     ## 2. Every test, hardcoded. Which ones this process runs is decided in the

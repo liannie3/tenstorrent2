@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from clipbench.config import available_profiles, load_config
+from clipbench.common.config import available_profiles, load_config
 
 CAMERAS = {
     'CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',

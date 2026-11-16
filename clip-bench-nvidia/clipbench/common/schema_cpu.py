@@ -8,7 +8,7 @@
 
 """Files written by run_cpu.py: one CSV per stage, plus a manifest.
 
-Columns match schema_nvidia.py so a cpu CSV and a jetson CSV compare directly.
+Columns match nvidia/schema.py so a cpu CSV and a jetson CSV compare directly.
 """
 
 import csv

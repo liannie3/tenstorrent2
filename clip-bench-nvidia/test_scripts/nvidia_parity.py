@@ -6,9 +6,9 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from clipbench import config as cfg          # noqa: E402
-from clipbench import data                   # noqa: E402
-from clipbench import model as model_lib     # noqa: E402
+from clipbench.common import config as cfg          # noqa: E402
+from clipbench.common import data                   # noqa: E402
+from clipbench.common import model as model_lib     # noqa: E402
 
 # Run from anywhere:  python test_scripts/nvidia_parity.py
 # Other images:       python test_scripts/nvidia_parity.py --images a.jpg b.jpg

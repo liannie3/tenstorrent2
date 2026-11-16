@@ -13,8 +13,8 @@
 import time
 import torch
 
-from .. import data
-from .. import model as model_lib
+from ...common import data
+from ...common import model as model_lib
 
 
 ## One sub-test: every frame, at a single view count.

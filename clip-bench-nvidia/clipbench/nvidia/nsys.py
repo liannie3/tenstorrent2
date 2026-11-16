@@ -8,9 +8,9 @@
 
 """NVTX ranges in an nsys capture -> an nvtx_ms column in the stage CSVs.
 
-run_nvidia.py runs this itself. To redo it on an existing capture:
+nvidia/run.py runs this itself. To redo it on an existing capture:
 
-    python -m clipbench.reports.nsys results/jetson/sweep.nsys-rep
+    python -m clipbench.nvidia.nsys results/jetson/sweep.nsys-rep
 """
 
 import argparse
@@ -19,9 +19,9 @@ import re
 import subprocess
 from pathlib import Path
 
-from .schema_nvidia import merge_nvtx_column
+from .schema import merge_nvtx_column
 
-## Must stay in step with push() in clipbench/benchmark_tests/deep_metrics.py
+## Must stay in step with push() in clipbench/nvidia/benchmark_tests/deep_metrics.py
 RANGE_PATTERN = re.compile(r'^(?P<stage>\w+)/v=(?P<views>\d+)/view=(?P<view>-?\d+)$')
 
 ## One row per range instance, not per range name. Report names vary between

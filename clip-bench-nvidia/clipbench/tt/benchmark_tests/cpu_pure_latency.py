@@ -1,8 +1,8 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            run_tt.py
-# CREATED:         11/8/2026
+# FILE:            cpu_pure_latency.py
+# CREATED:         11/13/2026
 # REVISION:        1.0
 # ======================================= #
 

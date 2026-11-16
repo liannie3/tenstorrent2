@@ -1,7 +1,7 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            gpu_pure_latency_tt.py
+# FILE:            schema.py
 # CREATED:         11/13/2026
 # REVISION:        1.0
 # ======================================= #

@@ -11,10 +11,6 @@ from . import deep_metrics
 from . import gpu_pure_latency
 from . import hardware_perf
 
-## cpu_pure_latency_tt and gpu_pure_latency_tt are deliberately not imported
-## here: they import ttnn, which would break run_nvidia.py on the Orin. run_tt.py
-## imports them directly.
-
 ## The name is also the results subdirectory, so each test's CSVs keep the same
 ## stage names without colliding.
 TESTS = {

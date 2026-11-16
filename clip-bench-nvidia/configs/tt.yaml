@@ -9,7 +9,7 @@
 ## YAML file for Tenstorrent Blackhole p150a
 
 run:
-  target: tenstorrent            # run with clipbench/run_tt.py
+  target: tenstorrent            # run with clipbench/tt/run.py
   device: tt                     # informational only -- the card is picked by device_id
   device_id: 0                   # which card ttnn.open_device opens
   precision: bf16                # tt_clip/weights.py casts every weight to bfloat16

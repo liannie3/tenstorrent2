@@ -9,7 +9,7 @@
 ## YAML file for Jetson AGX Orin
 
 run:
-  target: nvidia                 # run with clipbench/run_nvidia.py -- CUDA event stage timing
+  target: nvidia                 # run with clipbench/nvidia/run.py -- CUDA event stage timing
   device: cuda                   
   precision: fp16                # data type
 

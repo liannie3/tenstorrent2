@@ -19,7 +19,7 @@ from pathlib import Path
 import torch
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]   # clipbench/common/config.py -> project root
 CONFIG_DIR = PROJECT_ROOT / 'configs'
 
 ## Config values holding filesystem paths. Resolved against the project root so

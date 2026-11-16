@@ -14,8 +14,8 @@
 import time
 import torch
 
-from .. import data
-from .. import model as model_lib
+from ...common import data
+from ...common import model as model_lib
 
 
 ## Start/end pair, allocated before the loop so recording one costs nothing but

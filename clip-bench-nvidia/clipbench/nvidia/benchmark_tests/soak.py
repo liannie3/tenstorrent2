@@ -15,8 +15,8 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from .. import data
-from .. import model as model_lib
+from ...common import data
+from ...common import model as model_lib
 
 ## 1000 ms is the tegrastats default, which gives ~8 samples for a views=1
 ## sub-test. 100 ms is enough to see the clock ramp.

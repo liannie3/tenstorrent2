@@ -8,7 +8,7 @@ def open_ttnn(device_id=0, l1_small_size=8192, **kwargs):
     """Initialize TT-NN device with specified L1 cache size.
 
     Extra keyword arguments go straight to ttnn.open_device -- clipbench's
-    run_tt.py passes trace_region_size so it can replay Metal traces.
+    tt/run.py passes trace_region_size so it can replay Metal traces.
     """
     global device
     device = ttnn.open_device(device_id=device_id, l1_small_size=l1_small_size, **kwargs)

@@ -77,7 +77,7 @@ try:
         tt_out = tt_out.reshape(ref.shape)
         print(f"{path.name}: PCC={pcc(tt_out, ref):.5f}  shape={tuple(tt_out.shape)}")
 
-    # Timing: same loop structure as clipbench's gpu_pure_latency_tt.py.
+    # Timing: same loop structure as clipbench/tt/benchmark_tests/gpu_pure_latency.py.
     #   frame i -> for each view (image) -> [preprocess + upload, untimed]
     #                                       -> sync (empty queue) -> t0 -> encode -> sync -> t1
     # TT-NN has no device events, so every span is a perf_counter bracketed by synchronizes.
