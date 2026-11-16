@@ -1,6 +1,9 @@
 import sys, torch, config
 from main import main
 
+#NOTE: takes one argument, the tag for the resulting golden file's name
+#      e.g. python save_golde.py jetson_fp32
+
 #runs harness once and saves what it outputs to be compared later
 
 results = main("profile", config.IMG_DIR, 1)
