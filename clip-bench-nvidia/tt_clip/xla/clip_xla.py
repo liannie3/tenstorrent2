@@ -29,12 +29,14 @@ class CLIPVisionFeatures(torch.nn.Module):
 
     def __init__(self, hf_model: CLIPVisionModel, num_layers: int):
         super().__init__()
-        encoder = hf_model.vision_model.encoder
-        encoder.layers = encoder.layers[:num_layers]
-        self.vision_model = hf_model.vision_model
+        # Older transformers nest everything under .vision_model; newer releases put
+        # embeddings/encoder/pre_layrnorm directly on CLIPVisionModel. Handle both.
+        vision = getattr(hf_model, "vision_model", hf_model)
+        vision.encoder.layers = vision.encoder.layers[:num_layers]
+        self.hf_model = hf_model
 
     def forward(self, pixel_values):
-        hidden = self.vision_model(pixel_values=pixel_values).last_hidden_state
+        hidden = self.hf_model(pixel_values=pixel_values).last_hidden_state
         return hidden[:, 1:, :]                     # drop CLS -> [batch, 576, 1024]
 
 

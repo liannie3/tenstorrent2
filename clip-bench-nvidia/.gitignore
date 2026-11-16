@@ -6,7 +6,8 @@ __pycache__/
 models/
 data/
 results/
-
+notebooks/
+readme_images/
 # Nsight Systems captures and their sqlite exports
 *.nsys-rep
 *.sqlite

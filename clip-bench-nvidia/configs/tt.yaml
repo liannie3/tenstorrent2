@@ -3,15 +3,19 @@
 # ORGANIZATION:    Texas A&M University
 # FILE:            tt.yaml
 # CREATED:         11/8/2026
-# REVISION:        1.0
+# REVISION:        1.1
 # ======================================= #
 
 ## YAML file for Tenstorrent Blackhole p150a
 
 run:
   target: tenstorrent            # run with clipbench/run_tt.py
-  device:                    
-  precision: fp16                # data type
+  device: tt                     # informational only -- the card is picked by device_id
+  device_id: 0                   # which card ttnn.open_device opens
+  precision: bf16                # tt_clip/weights.py casts every weight to bfloat16
+  l1_small_size: 8192            # L1 reserved for conv2d (same as tt_clip/device.py)
+  trace_region_size: 67108864    # 64 MiB of DRAM for the Metal traces gpu_pure_latency replays
+  trace: true                    # false = time gpu_pure_latency eagerly (host dispatch included)
 
 output:
   results_dir: results/tt        # directory for result data

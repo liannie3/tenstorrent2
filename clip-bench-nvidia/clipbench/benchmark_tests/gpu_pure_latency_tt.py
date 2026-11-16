@@ -1,8 +1,8 @@
 # ======================================= #
 # AUTHOR:          Travis Mora
 # ORGANIZATION:    Texas A&M University
-# FILE:            nsys.py
-# CREATED:         10/26/2026
+# FILE:            gpu_pure_latency_tt.py
+# CREATED:         11/13/2026
 # REVISION:        1.0
 # ======================================= #
 
