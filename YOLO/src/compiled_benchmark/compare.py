@@ -28,6 +28,8 @@ for i in range(len(golden)): #same images, same order on both systems
     total_test += len(t)
     if len(g) == 0 or len(t) == 0:
         continue
+    
+    iou = box_iou(g[:, :4], t[:, :4]) #overlap between every golden box and every test box
 
     #overlap between every golden reference box and every test box
     for a in range(len(g)): #for each golden box
