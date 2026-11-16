@@ -30,17 +30,19 @@ for i in range(len(golden)): #same images, same order on both systems
         continue
 
     #overlap between every golden reference box and every test box
-    iou = box_iou(g[:, :4], t[:, :4]) 
     for a in range(len(g)): #for each golden box
-        for b in range(len(t)): #scan the test boxes for a box with the same class as golden
-            #NOTE: column 5 is the class 
-            if g[a, 5] == t[b, 5] and iou[a, b] >= 0.5: #same class and at least 50% overlap 
-                found += 1
-                conf_diff = abs(g[a,4]-t[b,4]).item() #NOTE: column 4 is the confidence score
-                conf_diff_sum += conf_diff
-                if conf_diff > conf_diff_max: #greedily check for new greatest cnfidence discrepancy
-                    conf_diff_max = conf_diff
-                break #stops at first matching test box
+        best_b = -1
+        best_iou = 0.5 #must overlap at least 50%
+        for b in range(len(t)): #find the test box of the same class that overlaps it the most
+            if g[a, 5] == t[b, 5] and iou[a, b].item() >= best_iou:  #same class and at least current best overlap
+                best_b = b
+                best_iou = iou[a, b].item()
+        if best_b >= 0:
+            found += 1
+            conf_diff = abs(g[a, 4] - t[best_b, 4]).item() #column 4 is the confidence score
+            conf_diff_sum += conf_diff
+            if conf_diff > conf_diff_max: #greedily check for new greatest cnfidence discrepancy
+                conf_diff_max = conf_diff
 
 print("reference boxes:", total_golden, "  test boxes:", total_test)
 if total_golden > 0:
