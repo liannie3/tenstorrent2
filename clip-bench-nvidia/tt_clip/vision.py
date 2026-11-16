@@ -148,16 +148,9 @@ class VisionTransformer:
         # Step 9: Pre-transformer layer normalization
         x = ttnn.layer_norm(x, weight=self.ln_pre_weights, bias=self.ln_pre_bias)
 
-        # Step 10: Permute to sequence-first format for transformer
-        # Transformers typically process in sequence-first format
-        # [batch_size, sequence_size, hidden_size] -> [sequence_size, batch_size, hidden_size]
-        x = ttnn.permute(x, (1, 0, 2))
-
-        # Step 11: Pass through transformer encoder layers
+        # Step 10: Transformer encoder layers, kept in [batch, seq, hidden] (batch-first).
+        # Do not permute to sequence-first: (seq, 1, hidden) wastes ~97% of each tile.
         x = self.transformer.forward(x)
 
-        # Step 12: Permute back to batch-first format
-        # [sequence_size, batch_size, hidden_size] -> [batch_size, sequence_size, hidden_size]
-        x = ttnn.permute(x, (1, 0, 2)) 
 
         return x

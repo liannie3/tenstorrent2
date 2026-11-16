@@ -22,8 +22,8 @@ HERE = Path(__file__).resolve().parent          # the tt_clip folder
 parser = argparse.ArgumentParser()
 parser.add_argument("--images", nargs="+", default=[str(HERE / "cat.jpg"), str(HERE / "dog.jpg")],
                     help="image files (default: cat.jpg and dog.jpg next to this script)")
-parser.add_argument("--warmup", type=int, default=2, help="untimed runs on the first image")
-parser.add_argument("--iters", type=int, default=20, help="timed runs on the first image")
+parser.add_argument("--warmup", type=int, default=2, help="untimed warmup passes over all images")
+parser.add_argument("--iters", type=int, default=20, help="timed frames (each frame runs every image once)")
 parser.add_argument("--sweep", action="store_true", help="per-depth PCC sweep only, no timing")
 args = parser.parse_args()
 
@@ -77,34 +77,64 @@ try:
         tt_out = tt_out.reshape(ref.shape)
         print(f"{path.name}: PCC={pcc(tt_out, ref):.5f}  shape={tuple(tt_out.shape)}")
 
-    # Timing: first image only. Input is already on the device, so this is pure device
-    # latency (no preprocessing, no host<->device copies in the timed region).
-    image_tt = to_tt(load_pixels(image_paths[0]))
+    # Timing: same loop structure as clipbench's gpu_pure_latency_tt.py.
+    #   frame i -> for each view (image) -> [preprocess + upload, untimed]
+    #                                       -> sync (empty queue) -> t0 -> encode -> sync -> t1
+    # TT-NN has no device events, so every span is a perf_counter bracketed by synchronizes.
+    views = len(image_paths)
 
-    # The first forward pays weight prep + kernel compile; report it separately.
-    start = time.perf_counter()
-    ttnn.deallocate(model.forward(image_tt))
-    ttnn.synchronize_device(get_device())
-    cold_ms = 1000 * (time.perf_counter() - start)
+    def sync():
+        ttnn.synchronize_device(get_device())
 
+    # Warmup: first forward pays weight prep + kernel compile. Timed separately, then discarded.
+    warm_start = time.perf_counter()
     for _ in range(args.warmup):
-        ttnn.deallocate(model.forward(image_tt))
-    ttnn.synchronize_device(get_device())
+        for path in image_paths:
+            ttnn.deallocate(model.forward(to_tt(load_pixels(path))))
+    sync()
+    warm_ms = 1000 * (time.perf_counter() - warm_start)
 
-    times = []
-    for _ in range(args.iters):
-        start = time.perf_counter()
-        out = model.forward(image_tt)
-        ttnn.synchronize_device(get_device())   # TT-NN ops are async
-        times.append(1000 * (time.perf_counter() - start))
-        ttnn.deallocate(out)
+    timings = []                                  # (stage, frame, view, ms)
+    subtest_start = time.perf_counter_ns()
 
-    times_sorted = sorted(times)
-    mean = sum(times) / len(times)
-    median = times_sorted[len(times) // 2]
-    print(f"\ncold first run : {cold_ms:.1f} ms (includes compile)")
-    print(f"warm latency over {args.iters} runs: mean={mean:.1f} ms  median={median:.1f} ms  "
-          f"min={times_sorted[0]:.1f} ms  max={times_sorted[-1]:.1f} ms")
-    print(f"throughput     : {1000 / mean:.2f} images/s (batch 1)")
+    for i in range(args.iters):
+        iter_start = time.perf_counter_ns()       # Iteration: start
+
+        for view, path in enumerate(image_paths):
+
+            # Decode + preprocess + upload [CPU, untimed]
+            pixel_values = to_tt(load_pixels(path))
+
+            # Empty queue, so the clock starts when the card does
+            sync()
+
+            # Encode [device]
+            t0 = time.perf_counter_ns()
+            out = model.forward(pixel_values)
+            sync()
+            t1 = time.perf_counter_ns()
+
+            timings.append(('encode', i, view, (t1 - t0) / 1e6))
+            ttnn.deallocate(out)
+            ttnn.deallocate(pixel_values)
+
+        timings.append(('iter', i, -1, (time.perf_counter_ns() - iter_start) / 1e6))
+
+    subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6
+
+    def stats(vals):
+        v = sorted(vals)
+        return (f"mean={sum(v) / len(v):.1f} ms  median={v[len(v) // 2]:.1f} ms  "
+                f"min={v[0]:.1f} ms  max={v[-1]:.1f} ms")
+
+    print(f"\nwarmup ({args.warmup} x {views} images, includes compile): {warm_ms:.1f} ms")
+    for view, path in enumerate(image_paths):
+        print(f"encode [{path.name}] over {args.iters} frames: "
+              f"{stats([ms for st, _, v, ms in timings if st == 'encode' and v == view])}")
+    print(f"encode [all]  : {stats([ms for st, _, _, ms in timings if st == 'encode'])}")
+    print(f"iter ({views} views): {stats([ms for st, _, _, ms in timings if st == 'iter'])}")
+    n_images = args.iters * views
+    print(f"subtest        : {subtest_ms:.1f} ms for {n_images} images "
+          f"({1000 * n_images / subtest_ms:.2f} images/s, includes untimed preprocessing)")
 finally:
     close_ttnn()

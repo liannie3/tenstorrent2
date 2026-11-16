@@ -25,61 +25,43 @@ class MultiHeadAttention:
 
 
     def forward(self, hidden_states):
-        sequence_size, batch_size, hidden_size = hidden_states.shape
+        # Batch-first layout [batch, seq, hidden]. Do NOT use sequence-first [seq, batch, hidden]:
+        # in tile layout the last two dims are padded to 32x32, so (seq, 1, hidden) pads every
+        # row to a 32-row tile and runs `seq` tiny matmuls instead of one big one.
+        batch_size, sequence_size, hidden_size = hidden_states.shape
 
         head_size = hidden_size // self.num_heads
 
-        # Compute Q, K, V projections from input hidden states
-        # Each projection: [sequence_size, batch_size, hidden_size] -> [sequence_size, batch_size, hidden_size]
+        # Q, K, V projections: [batch, seq, hidden] -> [batch, seq, hidden]
         q = ttnn.linear(hidden_states, self.q_proj_weight, bias=self.q_proj_bias, transpose_b=True)
         k = ttnn.linear(hidden_states, self.k_proj_weight, bias=self.k_proj_bias, transpose_b=True)
         v = ttnn.linear(hidden_states, self.v_proj_weight, bias=self.v_proj_bias, transpose_b=True)
 
-        # Reshape for multi-head attention: split hidden_size into (num_heads * head_dim)
-        # [sequence_size, batch_size, hidden_size] -> [sequence_size, batch_size * num_heads, head_dim]
-        q = ttnn.reshape(q, (sequence_size, batch_size * self.num_heads, head_size))
-        k = ttnn.reshape(k, (sequence_size, batch_size * self.num_heads, head_size))
-        v = ttnn.reshape(v, (sequence_size, batch_size * self.num_heads, head_size))
+        # Split heads: [batch, seq, hidden] -> [batch, seq, heads, head_dim] -> [batch, heads, seq, head_dim]
+        q = ttnn.permute(ttnn.reshape(q, (batch_size, sequence_size, self.num_heads, head_size)), (0, 2, 1, 3))
+        k = ttnn.permute(ttnn.reshape(k, (batch_size, sequence_size, self.num_heads, head_size)), (0, 2, 1, 3))
+        v = ttnn.permute(ttnn.reshape(v, (batch_size, sequence_size, self.num_heads, head_size)), (0, 2, 1, 3))
 
-        # Transpose to bring batch_size * num_heads dimension first for parallel attention computation
-        # [sequence_size, batch_size * num_heads, head_dim] -> [batch_size * num_heads, sequence_size, head_size]
-        q = ttnn.transpose(q, 0, 1)
-        k = ttnn.transpose(k, 0, 1)
-        v = ttnn.transpose(v, 0, 1)
-
-        # Compute attention scores: Q @ K^T
-        # [batch_size * num_heads, sequence_size, head_size] @ [batch_size * num_heads, head_size, sequence_size]
-        #   -> [batch_size * num_heads, sequence_size, sequence_size]
+        # Scores: [batch, heads, seq, head_dim] @ [batch, heads, head_dim, seq] -> [batch, heads, seq, seq]
         scores = ttnn.matmul(q, ttnn.transpose(k, -2, -1))
-        # Scale scores by 1 / sqrt(head_size) to prevent softmax saturation
         scores = scores * self.scale
 
-        # Apply attention mask if provided (for causal attention in text encoder)
+        # Optional mask (causal attention in a text encoder); broadcastable to the scores shape
         if self.attention_mask is not None:
-            # Add mask to scores (mask contains -inf for positions that should be ignored)
-            # Mask is broadcastable to [batch_size * num_heads, sequence_size, sequence_size]
             scores = scores + self.attention_mask
 
-        # Apply softmax to get attention weights
-        # numeric_stable=True uses the numerically stable softmax: softmax(x) = softmax(x - max(x))
-        # This prevents overflow when computing exp(x) for large values
+        # numeric_stable=True computes softmax(x - max(x)) to avoid overflow in exp
         attn_weights = ttnn.softmax(
             scores, dim=-1, numeric_stable=True,
         )
 
-        # [batch_size * num_heads, sequence_size, sequence_size] @ [batch_size*heads, sequence_size, head_size]
-        #   -> [batch_size * num_heads, sequence_size, head_size]
+        # [batch, heads, seq, seq] @ [batch, heads, seq, head_dim] -> [batch, heads, seq, head_dim]
         attn_output = ttnn.matmul(attn_weights, v)
 
-        # Transpose back to sequence-first format
-        # [batch_size * num_heads, sequence_size, head_size] -> [sequence_size, batch_size * num_heads, head_size]
-        attn_output = ttnn.transpose(attn_output, 0, 1)
+        # Merge heads: [batch, heads, seq, head_dim] -> [batch, seq, heads, head_dim] -> [batch, seq, hidden]
+        attn_output = ttnn.permute(attn_output, (0, 2, 1, 3))
+        attn_output = ttnn.reshape(attn_output, (batch_size, sequence_size, hidden_size))
 
-        # Merge heads back into hidden dimension
-        # [sequence_size, batch_size * num_heads, head_size] -> [sequence_size, batch_size, hidden_size]
-        attn_output = ttnn.reshape(attn_output, (sequence_size, batch_size, hidden_size))
-
-        # Apply output projection
         dense_out = ttnn.linear(
             attn_output,
             self.out_proj_weight,
@@ -88,6 +70,7 @@ class MultiHeadAttention:
         )
 
         return dense_out
+
 
 class MultilayerPerceptron:
     def __init__(self, state_dict, attention_mask=None, prefix=""):
