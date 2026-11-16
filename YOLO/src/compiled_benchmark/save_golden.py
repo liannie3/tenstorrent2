@@ -17,7 +17,7 @@ if data_type not in dtypes:
 #runs harness once and saves what it outputs to be compared later
 
 #temporarily override the config.py file's data type for this run only
-config.DTYPE = dtypes[prec]
+config.DTYPE = dtypes[data_type]
 
 #stops GPU from quietly using a lower T32 precision for small operations
 if data_type == "fp32" and torch.cuda.is_available():
@@ -32,4 +32,4 @@ out_dir = config.BENCH_DIR / "golden_files"
 out_dir.mkdir(parents = True, exist_ok = True)
 
 torch.save([r[0].float().cpu() for r in results], out_dir / f"golden_{sys.argv[1]}.pt")
-print("saved", out_dir / f"golden_{name}_{prec}.pt") #identify where the golden file is saved and what it was called
+print("saved", out_dir / f"golden_{name}_{data_type}.pt") #identify where the golden file is saved and what it was called
