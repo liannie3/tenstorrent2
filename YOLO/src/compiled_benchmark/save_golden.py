@@ -3,5 +3,10 @@ from main import main
 
 #runs harness once and saves what it outputs to be compared later
 
-results = main("profile", config.IMG_DIR, 1)                  
-torch.save([r[0].float().cpu() for r in results], f"golden_{sys.argv[1]}.pt")
+results = main("profile", config.IMG_DIR, 1)
+
+#ensure directory for golden to be saved to exists
+out_dir = config.BENCH_DIR / "golden_files"
+out_dir.mkdir(parents = True, exist_ok = True)
+
+torch.save([r[0].float().cpu() for r in results], out_dir / "golden_files" , f"golden_{sys.argv[1]}.pt")

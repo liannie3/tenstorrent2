@@ -3,10 +3,11 @@ import torch
 from torchvision.ops import box_iou
 
 #NOTE: TAKES CLI ARGUMENTS OF GOLDEN FILE AND FILE TO BE COMPARED AGAINST GOLDEN 
-#      e.g. "python compare.py golden_jetson_fp32.pt golden_jetson_fp32.pt"
+#      e.g. "python compare.py golden_jetson_fp32 golden_jetson_fp32"
 
-golden = torch.load(sys.argv[1])  #golden reference detections (e.g. golden_jetson_fp32.pt)
-test = torch.load(sys.argv[2]) #detections being checked (e.g. golden_tt_bf16.pt)
+#pass file names not paths for ease of use
+golden = torch.load(config.BENCH_DIR / "golden_files" / f"golden_{sys.argv[1]}.pt")  #golden reference detections (e.g. golden_jetson_fp32.pt)
+test = torch.load(config.BENCH_DIR / "golden_files" / f"golden_{sys.argv[2]}.pt") #detections being checked (e.g. golden_tt_bf16.pt)
 
 if len(golden) != len(test):
     sys.exit("ERROR: FILES HAVE A DIFFERENT NUMBER OF IMAGES")
