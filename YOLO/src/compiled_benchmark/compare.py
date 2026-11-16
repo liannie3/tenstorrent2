@@ -2,6 +2,8 @@ import sys
 import torch
 from torchvision.ops import box_iou
 
+import config
+
 #NOTE: TAKES CLI ARGUMENTS OF GOLDEN FILE AND FILE TO BE COMPARED AGAINST GOLDEN 
 #      e.g. "python compare.py golden_jetson_fp32 golden_jetson_fp32"
 
