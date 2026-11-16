@@ -31,5 +31,5 @@ results = main("profile", config.IMG_DIR, 1)
 out_dir = config.BENCH_DIR / "golden_files"
 out_dir.mkdir(parents = True, exist_ok = True)
 
-torch.save([r[0].float().cpu() for r in results], out_dir / f"golden_{sys.argv[1]}.pt")
+torch.save([r[0].float().cpu() for r in results], out_dir / f"golden_{sys.argv[1]}_{sys.argv[2]}.pt")
 print("saved", out_dir / f"golden_{name}_{data_type}.pt") #identify where the golden file is saved and what it was called
