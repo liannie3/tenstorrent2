@@ -18,6 +18,6 @@
     {"name": "cuda_stage", "level": "stage", "unit": "us/batch", "statistics": ["p50", "p95", "p99"], "source": "CUDA events on the execution stream", "authoritative_mode": "cuda-timing"},
     {"name": "transfer", "level": "hardware", "unit": "bytes/query and GB/s", "statistics": ["mean_bytes", "effective_bandwidth"], "source": "backend byte counts and CUDA events", "authoritative_mode": "cuda-timing"},
     {"name": "memory", "level": "hardware", "unit": "bytes", "statistics": ["persistent", "peak", "workspace", "peak_host_rss"], "source": "backend allocation accounting and OS RSS", "authoritative_mode": "cuda-timing"},
-    {"name": "telemetry", "level": "hardware", "unit": "provider-specific", "statistics": ["mean", "min", "max", "thermal_rise", "throttle_count", "max_sample_gap"], "source": "nvidia-smi or tegrastats", "authoritative_mode": "telemetry"}
+    {"name": "telemetry", "level": "hardware", "unit": "provider-specific", "statistics": ["mean", "min", "max", "thermal_rise", "throttle_count", "max_sample_gap"], "source": "nvidia-smi, tegrastats, or tt-smi", "authoritative_mode": "telemetry"}
   ]
 }

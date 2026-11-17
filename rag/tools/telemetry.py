@@ -80,6 +80,49 @@ def parse_nvidia_csv(text: str) -> dict[str, float | str | None]:
     }
 
 
+def parse_tenstorrent_json(text: str, device: int) -> dict[str, float | str | None]:
+    document = json.loads(text)
+    devices = document.get("device_info")
+    if devices is None:
+        devices = document.get("devices")
+    if isinstance(devices, dict):
+        devices = list(devices.values())
+    if not isinstance(devices, list) or device >= len(devices):
+        # Some older snapshots contain a single device object at the top level.
+        devices = [document]
+    if device >= len(devices) or not isinstance(devices[device], dict):
+        raise ValueError(f"tt-smi snapshot has no device {device}")
+    item = devices[device]
+    telemetry = nested(item, "telemetry")
+    if not isinstance(telemetry, dict):
+        telemetry = item
+    limits = nested(item, "limits")
+    if not isinstance(limits, dict):
+        limits = {}
+
+    temperature = number(nested(
+        telemetry, "asic_temperature", "temperature", "core_temperature"
+    ))
+    limit = number(nested(
+        limits, "asic_temperature", "temperature", "thermal_limit",
+        "temperature_limit",
+    ))
+    power = number(nested(telemetry, "board_power", "power", "core_power"))
+    clock = number(nested(telemetry, "aiclk", "ai_clock", "core_clock"))
+    throttled = None
+    if temperature is not None and limit is not None:
+        throttled = "1" if temperature >= limit else "0"
+    return {
+        "temperature_c": temperature,
+        "power_w": power,
+        "core_clock_mhz": clock,
+        "memory_clock_mhz": None,
+        "utilization_pct": number(nested(telemetry, "utilization")),
+        "thermal_limit_c": limit,
+        "throttled": throttled,
+    }
+
+
 def parse_tegrastats(
     text: str, power_rail: str = "unspecified"
 ) -> dict[str, float | str | None]:
@@ -172,6 +215,12 @@ def sample_once(
             process.terminate()
             stdout, _ = process.communicate(timeout=2)
         return parse_tegrastats(stdout, power_rail)
+    if provider == "tenstorrent":
+        completed = subprocess.run(
+            ["tt-smi", "-s"],
+            check=True, capture_output=True, text=True, timeout=5,
+        )
+        return parse_tenstorrent_json(completed.stdout, device)
     raise ValueError(f"unsupported telemetry provider: {provider}")
 
 
@@ -180,7 +229,7 @@ class TelemetrySampler:
         self, provider: str, device: int = 0, interval_ms: int = 500,
         power_rail: str = "unspecified",
     ):
-        if provider not in {"nvidia", "jetson"}:
+        if provider not in {"nvidia", "jetson", "tenstorrent"}:
             raise ValueError(f"unsupported telemetry provider: {provider}")
         if device < 0 or interval_ms < 100:
             raise ValueError("device must be non-negative and interval at least 100 ms")

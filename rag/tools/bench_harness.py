@@ -320,6 +320,11 @@ def file_sha256(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rag-bench", type=Path, required=True)
+    parser.add_argument(
+        "--ttnn-bench",
+        type=Path,
+        help="rag_bench-compatible TT-NN Python adapter",
+    )
     parser.add_argument("--bank", type=Path, required=True)
     parser.add_argument("--queries", type=Path, required=True)
     parser.add_argument("--expected", type=Path, required=True)
@@ -352,7 +357,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--telemetry-provider",
-        choices=("none", "nvidia", "jetson"),
+        choices=("none", "nvidia", "jetson", "tenstorrent"),
         default="none",
         help="sample accelerator temperature, power, and clocks during each trial",
     )
@@ -390,6 +395,15 @@ def main() -> int:
         )
 
     backend_specs = [item.strip() for item in arguments.backends.split(",") if item.strip()]
+    if any(parse_backend(spec)[0] == "ttnn-reference" for spec in backend_specs):
+        if arguments.ttnn_bench is None:
+            raise SystemExit("--ttnn-bench is required for ttnn-reference")
+        if not arguments.ttnn_bench.is_file():
+            raise SystemExit(f"TT-NN adapter does not exist: {arguments.ttnn_bench}")
+    backend_executables = (
+        {"ttnn-reference": arguments.ttnn_bench}
+        if arguments.ttnn_bench else None
+    )
     batches = [int(item) for item in arguments.batches.split(",") if item.strip()]
     if not backend_specs or not batches or arguments.trials <= 0:
         raise SystemExit("at least one backend, batch size, and trial are required")
@@ -412,6 +426,7 @@ def main() -> int:
         evaluate_backend(
             arguments.rag_bench, arguments.bank, arguments.queries,
             arguments.expected, spec,
+            backend_executables=backend_executables,
         )
         for spec in backend_specs
     ]
@@ -454,6 +469,7 @@ def main() -> int:
                         arguments.expected, backend_spec,
                         batch=batch, warmup=arguments.warmup,
                         iterations=arguments.iters, threshold=threshold,
+                        backend_executables=backend_executables,
                         raw_output=(arguments.results / "raw" /
                                     f"{safe_backend}-b{batch}-run{trial:02}.csv"),
                     )

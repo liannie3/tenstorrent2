@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Mapping
 
 from benchmark_common import parse_backend, run_benchmark, write_csv
 
@@ -31,6 +32,7 @@ def evaluate_backend(
     required_top1: float = 100.0,
     required_gate: float = 100.0,
     score_tolerance: float = 5e-3,
+    backend_executables: Mapping[str, Path] | None = None,
 ) -> dict:
     expected_document = json.loads(expected_path.read_text(encoding="utf-8"))
     expected = expected_document["results"]
@@ -44,6 +46,7 @@ def evaluate_backend(
         warmup=0,
         iterations=1,
         threshold=float(expected_document["threshold"]),
+        backend_executables=backend_executables,
     )
     measured = [record for record in records if record["mode"] == "measured"]
     if len(measured) != len(expected):
@@ -85,6 +88,11 @@ def evaluate_backend(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rag-bench", type=Path, required=True)
+    parser.add_argument(
+        "--ttnn-bench",
+        type=Path,
+        help="rag_bench-compatible TT-NN Python adapter",
+    )
     parser.add_argument("--bank", type=Path, required=True)
     parser.add_argument("--queries", type=Path, required=True)
     parser.add_argument("--expected", type=Path, required=True)
@@ -106,6 +114,16 @@ def main() -> int:
         backend.strip() for backend in arguments.backends.split(",")
         if backend.strip()
     ]
+    if any(parse_backend(spec)[0] == "ttnn-reference" for spec in requested_backends):
+        if arguments.ttnn_bench is None:
+            raise SystemExit("--ttnn-bench is required for ttnn-reference")
+        if not arguments.ttnn_bench.is_file():
+            raise SystemExit(f"TT-NN adapter does not exist: {arguments.ttnn_bench}")
+    backend_executables = (
+        {"ttnn-reference": arguments.ttnn_bench}
+        if arguments.ttnn_bench else None
+    )
+
     rows = [
         evaluate_backend(
             arguments.rag_bench,
@@ -116,6 +134,7 @@ def main() -> int:
             required_top1=arguments.required_top1,
             required_gate=arguments.required_gate,
             score_tolerance=arguments.score_tolerance,
+            backend_executables=backend_executables,
         )
         for backend in requested_backends
     ]

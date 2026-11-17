@@ -73,6 +73,18 @@ def main() -> None:
     ]
     assert [row["power_w"] for row in expanded] == ["4.5", "12.0", "22.0"]
 
+    tt = telemetry.parse_tenstorrent_json(
+        '{"device_info":[{"telemetry":{"asic_temperature":"72.5",'
+        '"board_power":"188.2", "aiclk":"1250"},'
+        '"limits":{"temperature":"90"}}]}',
+        0,
+    )
+    assert tt["temperature_c"] == 72.5
+    assert tt["power_w"] == 188.2
+    assert tt["core_clock_mhz"] == 1250.0
+    assert tt["thermal_limit_c"] == 90.0
+    assert tt["throttled"] == "0"
+
     samples = []
     for trial, temperature, power in (("1", "60", "100"), ("1", "70", "120")):
         row = {field: "" for field in telemetry.SAMPLE_FIELDS}
