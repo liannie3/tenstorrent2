@@ -74,16 +74,26 @@ def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE
 @torch.inference_mode()
 def hardware_substages(model, images, device = config.DEVICE):
     #prepare each stages inputs before metrics are gathered
+    
     sample = images[:config.HW_SAMPLE_SIZE]
-    ims, shapes = preprocess_stage(sample,device)
-    preds = inference_stage(model, ims, device)[0] #grabs the tensor portion of inference output
+    
+    #prepare each image on its own (batch 1) like the TT version, 
+    #a batch of 25 forces to compile a new graph and uses too much memory
+    ims, shapes, preds = [], [], []
+    for i in range(len(sample)):
+        im, shape = preprocess_stage(sample[i:i+1], device)
+        ims.append(im)
+        shapes.append(shape)
+        preds.append(inference_stage(model, im, device)[0]) #grabs the tensor portion of inference output
+    if torch.device(device).type == "cuda":
+        torch.cuda.synchronize()
 
     #lookup table to invoke each substage (and an idle for baseline) independently
     substages = {
         "idle": lambda i: time.sleep(0.01),
         "pre_processing": lambda i: preprocess_stage(sample[i:i+1], device),
-        "inference": lambda i: inference_stage(model, ims[i:i+1], device),
-        "post_processing": lambda i: postprocess_stage(preds[i:i+1], ims[i:i+1], shapes[i:i+1], config.CONF_THRES, config.IOU_THRESH, device),
+        "inference": lambda i: inference_stage(model, ims[i], device),
+        "post_processing": lambda i: postprocess_stage(preds[i], ims[i], shapes[i], config.CONF_THRES, config.IOU_THRESH, device),
     }
 
     #warm every substage up before the monitor start to avoid compile time overhead appearing inside the pre_processing and inference windows
