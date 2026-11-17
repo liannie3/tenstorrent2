@@ -4,17 +4,10 @@ import torch
 import time
 
 import config
-from timing import reset, _sync
+from timing import reset, _sync, signpost
 import results
 from stages import preprocess_stage, inference_stage, postprocess_stage
 
-import importlib.util #checks that tracy profiler module is installed
-
-if importlib.util.find_spec("tracy"):
-    from tracy import signpost #tt's version of nvtx markerS that show up in the trace and ops report
-else:
-    def signpost(header, message = None): #tracy missing, markers do nothing
-        pass
 
 hw_window = {} #store timestamp of the last run, used to line up hardware monitor logs
 

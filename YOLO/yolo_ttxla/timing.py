@@ -7,6 +7,15 @@ import torch
 
 import config
 
+import importlib.util #checks that tracy profiler module is installed
+
+#used to identify boundaries of substage operation when profiling wiht tracy
+if importlib.util.find_spec("tracy"):
+    from tracy import signpost #tt's version of markerS that show up in the trace and ops report
+else:
+    def signpost(header, message = None): #tracy missing, markers do nothing
+        pass
+
 
 _barrier = None #force to wait to return before card has finished all queued compiled graph work
 #nested dictionary to store timings of each stage's substage
@@ -48,12 +57,16 @@ def _sync(device):
 @contextmanager
 def timed(store, name, device, gpu_work = True):
     if not config.SUBSTEP_TIMING or config.HARDWARE_METRICS: #wall timing uses perf counters and sync so timed unapplicable
+        signpost(f"{name}_start")
         yield
+        signpost(f"{name}_end")
         return
     if gpu_work:
         _card_sync()
+    signpost(f"{name}_start")
     t0 = time.perf_counter()
     yield  #exit code below
+    signpost(f"{name}_end")
     if gpu_work:
         _card_sync()
     store[name].append((time.perf_counter() - t0 ) * 1000) #convert to ms timing and store in dictionary at associated key
