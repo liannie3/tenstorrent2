@@ -146,9 +146,6 @@ RunResult run(
 #ifdef RAG_HAS_NVTX
           measured.nvtx_enabled = true;
 #endif
-#ifdef RAG_HAS_TRACY
-          measured.tracy_enabled = true;
-#endif
           measured.payload_bytes = rag::payload_bytes(responses[query]);
           measured.match = responses[query].match;
           records.push_back(measured);

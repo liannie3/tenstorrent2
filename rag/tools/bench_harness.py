@@ -424,7 +424,6 @@ def main() -> int:
     telemetry_samples = []
     cuda_timing_enabled = False
     nvtx_enabled = False
-    tracy_enabled = False
     static_sizes = bank_sizes(arguments.bank)
     for backend_spec, quality in zip(backend_specs, quality_rows):
         if quality["passed"] != "true":
@@ -488,10 +487,6 @@ def main() -> int:
             )
             nvtx_enabled = nvtx_enabled or any(
                 row.get("nvtx_enabled") in {"1", "true", "True"}
-                for row in records
-            )
-            tracy_enabled = tracy_enabled or any(
-                row.get("tracy_enabled") in {"1", "true", "True"}
                 for row in records
             )
             application_rows.append(
@@ -610,8 +605,8 @@ def main() -> int:
               thermal_rows)
 
     manifest = {
-        "schema": "rag-benchmark-manifest-v5",
-        "raw_schema": "rag-benchmark-raw-v3",
+        "schema": "rag-benchmark-manifest-v4",
+        "raw_schema": "rag-benchmark-raw-v2",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "host": platform.platform(),
         "python": platform.python_version(),
@@ -624,7 +619,6 @@ def main() -> int:
         "instrumentation": {
             "cuda_event_timing": cuda_timing_enabled,
             "nvtx": nvtx_enabled,
-            "tracy": tracy_enabled,
             "telemetry": {
                 "provider": arguments.telemetry_provider,
                 "device": arguments.telemetry_device,

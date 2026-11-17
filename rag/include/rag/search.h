@@ -6,12 +6,6 @@
 #include <memory>
 #include <vector>
 
-#ifdef RAG_HAS_TRACY
-namespace tracy {
-class CUDACtx;
-}
-#endif
-
 namespace rag {
 
 // Search result
@@ -84,9 +78,6 @@ class CudaSearcher {
   float* device_keys_ = nullptr;    // [count, 2048]
   float* device_query_ = nullptr;   // [2048]
   float* device_scores_ = nullptr;  // [count]
-#ifdef RAG_HAS_TRACY
-  tracy::CUDACtx* tracy_cuda_context_ = nullptr;
-#endif
 };
 
 enum class SearchPrecision {

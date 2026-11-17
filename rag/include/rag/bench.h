@@ -48,7 +48,6 @@ struct Record {
   bool device_timing_available = false;
   bool cuda_timing_enabled = false;
   bool nvtx_enabled = false;
-  bool tracy_enabled = false;
   std::size_t payload_bytes = 0;
   std::size_t peak_host_rss_bytes = 0;
   Match match;

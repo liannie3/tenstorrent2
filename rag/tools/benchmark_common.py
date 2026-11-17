@@ -38,7 +38,6 @@ RAW_FIELDS = [
     "device_timing_available",
     "cuda_timing_enabled",
     "nvtx_enabled",
-    "tracy_enabled",
     "payload_bytes",
     "peak_host_rss_bytes",
     "accepted",

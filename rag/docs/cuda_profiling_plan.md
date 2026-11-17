@@ -8,20 +8,16 @@ implemented. CPU and CUDA/NVTX compilation are verified. Final device-runtime va
 instrumentation-overhead measurement, and representative Nsight captures must be performed
 on the Jetson benchmark host.
 
-### Post-migration follow-up
+### Profiling decision after branch migration
 
 - [x] Finish the branch migration: keep the Jetson implementation on
   `al/rag-jetson` and move the Tenstorrent implementation to
   `al/rag-tenstorrent`.
-- [x] Add optional Tracy instrumentation to the NVIDIA path
-  using the same backend-neutral request and host-stage zone names as the
-  Tenstorrent path.
-- [ ] Keep `steady_clock` as the authoritative source for unprofiled application
-  P50/P95/P99 latency and throughput. Use Tracy only for correlated CPU/device
-  diagnosis, and measure its overhead independently on both platforms.
-- [ ] Retain optional NVTX/Nsight support for NVIDIA-specific diagnosis; Tracy is
-  an additional common view, not a replacement for CUDA events or the TT device
-  profiler.
+- [x] Keep `steady_clock` as the authoritative source for unprofiled application
+  P50/P95/P99 latency and throughput.
+- [x] Keep CUDA events as the numeric source for NVIDIA device-stage timing.
+- [x] Keep NVTX, Nsight Systems, and Nsight Compute for NVIDIA timeline and
+  kernel diagnosis. Do not add Tracy to the NVIDIA benchmark path.
 
 The benchmark currently measures host-visible request latency with
 `std::chrono::steady_clock`. That remains the authoritative measurement for application
@@ -41,7 +37,6 @@ These mechanisms complement rather than replace the existing host timer:
 | --- | --- | --- |
 | `steady_clock` | Caller-visible elapsed time | Yes: application latency and throughput |
 | CUDA events | CUDA-stream stage durations | Yes: hardware-layer CUDA metrics |
-| Tracy + CUPTI | Correlated CPU/CUDA timeline | No: diagnostic evidence only |
 | NVTX | Semantic labels for code regions | No: annotations only |
 | Nsight Systems | External CPU/GPU timeline and diagnosis | No: diagnostic evidence |
 

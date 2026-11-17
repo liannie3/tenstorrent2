@@ -226,28 +226,7 @@ This run supplies H2D, conversion, GEMM, reduction, D2H, and total device-stage
 P50/P95/P99 metrics, plus persistent, peak, and workspace device-memory accounting. It
 does not supply published application latency.
 
-## 8. Tracy host/device timeline
-
-Build Tracy v0.14.0 separately from release and CUDA-event binaries:
-
-```bash
-git clone --branch v0.14.0 --depth 1 \
-  https://github.com/wolfpld/tracy.git /opt/tracy-v0.14.0
-cmake -S . -B build-cuda-tracy -G Ninja \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DRAG_ENABLE_CUDA=ON \
-  -DRAG_ENABLE_TRACY=ON \
-  -DRAG_TRACY_SOURCE_DIR=/opt/tracy-v0.14.0 \
-  -DRAG_CUDA_ARCHITECTURES=87
-cmake --build build-cuda-tracy
-```
-
-Start the matching Tracy profiler, then capture a short FP32 and BF16 run. Tracy uses
-CUPTI to collect CUDA kernels, copies, synchronizations, streams, and graph launches;
-the application adds common `rag/*` CPU zones. Keep the resulting `.tracy` captures in
-`results/$RUN_DATE/profiles`. Do not treat profiled durations as release measurements.
-
-## 9. Nsight Systems, Nsight Compute, and NVTX
+## 8. Nsight Systems, Nsight Compute, and NVTX
 
 ```bash
 cmake -S . -B build-cuda-nvtx -G Ninja \
@@ -294,7 +273,7 @@ ncu --set full --target-processes all \
 
 Nsight Compute is diagnostic. Do not use its request duration as release latency.
 
-## 10. Report and artifacts
+## 9. Report and artifacts
 
 ```bash
 python tools/render_report.py \
@@ -312,7 +291,7 @@ Retain these layers separately inside the same dated bundle:
 Also retain `rag_run_manifest.json`, all raw trial CSVs, `rag_power_rails.csv`, and the
 output of `tools/validate_campaign.py` with the campaign archive.
 
-## 11. Real data
+## 10. Real data
 
 Generate the deterministic fixture only when intentionally replacing it:
 

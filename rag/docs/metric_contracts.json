@@ -4,7 +4,6 @@
   "run_modes": {
     "release": "Authoritative host-facing latency and throughput; instrumentation disabled.",
     "cuda-timing": "CUDA-event and host-stage diagnostics; never substitutes for release latency.",
-    "tracy": "Correlated CPU/CUDA timeline collected with CUPTI; diagnostic only.",
     "telemetry": "Long-running release workload with external power, thermal, clock, and utilization sampling.",
     "nsight-systems": "Short timeline diagnosis; never a percentile source.",
     "nsight-compute": "Representative kernel counters; never a request-latency source."
