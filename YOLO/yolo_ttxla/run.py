@@ -8,6 +8,14 @@ from timing import reset, _sync
 import results
 from stages import preprocess_stage, inference_stage, postprocess_stage
 
+import importlib.util #checks that tracy profiler module is installed
+
+if importlib.util.find_spec("tracy"):
+    from tracy import signpost #tt's version of nvtx markerS that show up in the trace and ops report
+else:
+    def signpost(header, message = None): #tracy missing, markers do nothing
+        pass
+
 hw_window = {} #store timestamp of the last run, used to line up hardware monitor logs
 
 def load_images(img_paths):
@@ -61,13 +69,19 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
     for imgs in loaded:
         _sync(device) #isolates work between stages like accelerator.synchronize does in ultralytics profile
         t0 = time.perf_counter()
+        signpost("preprocess_start") #tracy marker for signifiying start of profiling preprocessing
         im, shapes = preprocess_stage(imgs, device)
+        signpost("preprocess_end") #tracy marker for signifiying end of profiling preprocessing
         _sync(device)
         t1 = time.perf_counter() 
+        signpost("inference_start") #tracy marker for signifiying start of profiling inferncing
         predictions = inference_stage(model, im, device)
+        signpost("inference_end") #tracy marker for signifiying end of profiling inferncing
         _sync(device)
         t2 = time.perf_counter()
+        signpost("postprocess_start") #tracy marker for signifiying start of profiling post processing
         outputs.append(postprocess_stage(predictions, im, shapes, config.CONF_THRES, config.IOU_THRESH, device) );
+        signpost("postprocess_end") #tracy marker for signifiying end of profiling postprocessing
         _sync(device)
         t3 = time.perf_counter()
         if not config.SUBSTEP_TIMING and not config.HARDWARE_METRICS:
