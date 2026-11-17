@@ -1,5 +1,0 @@
-# Application packages. Use the lab's TT-XLA build for torch and torch_xla.
-transformers==4.44.2
-sentencepiece
-safetensors
-huggingface-hub
