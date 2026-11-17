@@ -109,8 +109,8 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
     #print results of runs
     if not config.HARDWARE_METRICS: #latency numbers aren't valid during hardware phase
         if setting == "e2e":
-            csv_rows = results.display_results(batch_times, num_images, batch_size, device, hw_window["start"], hw_window["end"])
+            csv_rows = results.display_e2e_results(batch_times, num_images, batch_size, device, hw_window["start"], hw_window["end"])
         else:
-            csv_rows = results.display_e2e_results(stage_wall_timings, num_images, batch_size, device)
+            csv_rows = results.display_results(stage_wall_timings, num_images, batch_size, device)
         results.store_results(csv_rows)
     return outputs
