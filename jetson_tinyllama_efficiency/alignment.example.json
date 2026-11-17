@@ -1,0 +1,9 @@
+{
+  "alignment_id": "REPLACE_WITH_TRAINED_PROJECTOR_AND_LLM_PAIR_ID",
+  "training_reference": "REPLACE_WITH_TRAINING_RUN_OR_RELEASE_REFERENCE",
+  "model_path": "models/aligned-tinyllama",
+  "text_embedding_id": "REPLACE_WITH_CHECKPOINT_SHA:raw-bos-final-hidden-mean-l2-v1",
+  "fusion_id": "retrieved_current_chat_v1",
+  "current_token_count": 577,
+  "retrieved_token_count": 101
+}
