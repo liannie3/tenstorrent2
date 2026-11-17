@@ -80,7 +80,11 @@ def hw_monitor():
             proc.terminate()
             proc.wait()
             config.HARDWARE_METRICS = False
-
+            
+#print which files a hardware pass just updated and what is in them
+def print_logs(monitor, path):
+    print(f"  UPDATED: {config.BENCH_DIR / f'{monitor}.csv'}  (tt-smi readings, columns: {TT_SMI_FIELDS})")
+    print(f"  UPDATED: {path}  (start/end time of each window, to pick out the readings inside it)")
 ########################################################################################################################################################################
 #                         | | | |                                                                                                                                      #
 #   Run Pipeline and Main V V V V                                                                                                                                      #
@@ -91,8 +95,8 @@ def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE
     with hw_monitor() as monitor:
         run.run_pipeline(model, img_paths, batch_size, device)
 
-    results.store_hw_window(monitor, "full_pipeline", run.hw_window["start"], run.hw_window["end"])
-
+    results.store_hw_window(monitor, "full_pipeline", batch_size, run.hw_window["start"], run.hw_window["end"])
+    print_logs(monitor, config.HARDWARE_PATH) #indicates what logs were updated and where they're located
 #test each substage in isolation over a fixed period and accumulates, averages, then stores associated hardware metrics
 @torch.no_grad()
 def hardware_substages(model, images, device = config.DEVICE):
@@ -131,8 +135,9 @@ def hardware_substages(model, images, device = config.DEVICE):
             _card_sync() #force cpu to wait for card work after runs finish
             
             t_end = time.time()
-            runs.append({"monitor": monitor,"stage": name, "start" : t_start, "end" : t_end, "iterations" : n})
+            runs.append({"monitor": monitor,"stage": name, "batch_size" : 1, "start" : t_start, "end" : t_end, "iterations" : n})
             print(f"{name:<16} {n} runs, {(t_end - t_start) / n * 1000:.2f} ms per run")
             time.sleep(1) #further discretize phases of substage testing
 
     results.store_hw_stages(runs)
+    print_logs(monitor, config.HARDWARE_STAGES_PATH)

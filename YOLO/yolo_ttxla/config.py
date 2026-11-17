@@ -23,8 +23,8 @@ HARDWARE_LOG = CSV_PATH.parent / "tegrastats.log"
 
 #indicates fields to be saved in each row of csv dictionary
 CSV_FIELDS = ["timestamp", "script", "pass", "device", "batch_size", "num_images", "stage", "step", "ms"] #nested dictionaries to asynchronously store timing for each layer of each stage
-HARDWARE_FIELDS = ["monitor", "phase", "start", "end"]
-STAGE_FIELDS = ["monitor", "stage", "start", "end", "iterations"]
+HARDWARE_FIELDS = ["monitor", "phase", "batch_size", "start", "end"]
+STAGE_FIELDS = ["monitor", "stage", "batch_size", "start", "end", "iterations"]
 IMG_FORMATS = [".jpg", ".jpeg", ".png"]
 
 #pipeline stages

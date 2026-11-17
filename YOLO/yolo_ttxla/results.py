@@ -42,9 +42,9 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
 def store_results(rows):
     _append_csv(config.CSV_PATH, config.CSV_FIELDS, rows)
     
-def store_hw_window(monitor, phase, start, end):
+def store_hw_window(monitor, phase, batch_size, start, end):
     _append_csv(config.HARDWARE_PATH, config.HARDWARE_FIELDS,
-                [{"monitor": monitor, "phase": phase, "start": start, "end": end}])
+                [{"monitor": monitor, "phase": phase, "batch_size" : batch_size, "start": start, "end": end}])
 
 def store_hw_stages(runs):
     _append_csv(config.HARDWARE_STAGES_PATH, config.STAGE_FIELDS, runs)
