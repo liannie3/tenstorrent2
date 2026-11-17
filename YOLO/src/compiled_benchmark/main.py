@@ -34,7 +34,11 @@ def main(setting, img_dir, batch_size : int = 1):
     img_paths = load_image_path(img_dir)
     model = load_model()
     results = None
-        
+
+    if setting in ("e2e", "holistic"):
+        print(f"    PASS 0: End to End latency (asynchronous capturing total host time per batch)  ")
+        config.SUBSTEP_TIMING = False
+        results = run_pipeline(model, img_paths, batch_size, config.DEVICE, "e2e")
     if setting in ("latency", "holistic", "profile"):
         print(f"   PASS 1: stage wall times only (synchronous profiling)   ")
         config.SUBSTEP_TIMING = False
@@ -61,7 +65,7 @@ def main(setting, img_dir, batch_size : int = 1):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile"] )
+    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"] )
     parser.add_argument("batch_size", type = int, choices = [1, 2, 4, 8, 16] )
     args = parser.parse_args()
     main(args.setting, config.IMG_DIR, args.batch_size)
