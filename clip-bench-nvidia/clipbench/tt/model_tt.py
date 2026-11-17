@@ -37,14 +37,18 @@ def resolve_dtype(precision):
 
 
 ## Must be open before load_encoder / load_projector -- weights go straight to the card
+# CUDA doesn't have to open and close device because it automatically does it for you
+# Only one process can hold a TT device at a time
 def open_device(config):
     run = config['run']
     tt_device.open_ttnn(device_id=run['device_id'],
-                        l1_small_size=run['l1_small_size'],
-                        trace_region_size=run['trace_region_size'])
+                        l1_small_size=run['l1_small_size'],               # how many bytes of each core's on-chip memory ttnn sets aside
+                        trace_region_size=run['trace_region_size'])       # equivalent to CUDA Graphs
     return tt_device.get_device()
 
-
+## Closes Device
+# Finishes any queued work and frees everything allocated on the card (weights, activations, traces)
+# Releases the card
 def close_device():
     tt_device.close_ttnn()
 
@@ -56,17 +60,21 @@ def to_device(pixel_values, dtype):
                            device=tt_device.get_device())
 
 
-## hidden_states has num_layers + 1 entries (embeddings first), so layer_index -2
-## on a 24-layer model is the output of layer 23. The TT encoder just runs that many.
-def _num_layers(layer_index, total_layers):
-    return layer_index if layer_index >= 0 else total_layers + 1 + layer_index
-
-
 ## CLIP encoder, frozen. Returns hidden_states[layer_index] directly, CLS included.
+##
+## NVIDIA runs all 24 layers and picks hidden_states[-2] afterwards.
+## TT gets the same tensor by only building the first 23 layers -- layer 24 never runs.
 def load_encoder(config):
-    resolve_dtype(config['run']['precision'])
+    resolve_dtype(config['run']['precision'])     # fail early if precision isn't bf16
+
+    ## HF model on the CPU, only used as the source of the weights
     hf_model = CLIPVisionModel.from_pretrained(config['model']['name']).eval()
-    num_layers = _num_layers(config['model']['layer_index'], hf_model.config.num_hidden_layers)
+
+    ## How many layers to build. hidden_states is [embeddings, after layer 1, ..., after layer 24]
+    ## (25 entries), so indexing range(25) the same way gives the layer count: -2 -> 23
+    num_layers = range(hf_model.config.num_hidden_layers + 1)[config['model']['layer_index']]
+
+    ## Copy the weights onto the card, then build the 23-layer TT model from them
     return VisionTransformer(convert_model_to_ttnn(hf_model.state_dict()), num_vision_layers=num_layers)
 
 
