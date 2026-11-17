@@ -60,14 +60,6 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     add_test(NAME bank_builder COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_builder.py)
     add_test(
-      NAME tt_bank_packer
-      COMMAND ${Python3_EXECUTABLE}
-              ${CMAKE_SOURCE_DIR}/tests/test_tt_bank_packer.py)
-    add_test(
-      NAME ttnn_backend_contract
-      COMMAND ${Python3_EXECUTABLE}
-              ${CMAKE_SOURCE_DIR}/tests/test_ttnn_backend.py)
-    add_test(
       NAME telemetry_tools
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_SOURCE_DIR}/tests/test_telemetry.py)

@@ -17,6 +17,9 @@ def main():
     tools = rag_root / "tools"
     sys.path.insert(0, str(tools))
     from bench_harness import hardware_row
+    from run_bank_sweep import DEFAULT_SIZES
+
+    assert DEFAULT_SIZES == "10,100,3400,10000"
 
     synthetic = []
     for trial, device_us in (("1", "20"), ("2", "22")):
@@ -151,7 +154,8 @@ def main():
         manifest_path = results / "rag_run_manifest.json"
         assert manifest_path.is_file()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["schema"] == "rag-benchmark-manifest-v3"
+        assert manifest["schema"] == "rag-benchmark-manifest-v4"
+        assert manifest["raw_schema"] == "rag-benchmark-raw-v2"
         instrumentation = manifest["instrumentation"]
         assert isinstance(instrumentation["cuda_event_timing"], bool)
         assert isinstance(instrumentation["nvtx"], bool)
@@ -159,7 +163,9 @@ def main():
             "provider": "none",
             "device": 0,
             "interval_ms": 500,
+            "power_rail": "unspecified",
             "scope": "entire benchmark child process per trial",
+            "energy_scope": "final measured phase; requires at least two samples",
         }
         with (results / "rag_telemetry.csv").open(
             newline="", encoding="utf-8"
@@ -219,6 +225,9 @@ def main():
         assert "See the raw CSV files for full precision." in rendered
         assert "| CPU reference | FP32 | 1 | 2 | 512 | Single request · all |" in rendered
         assert "| CPU reference | FP32 | 1 | accepted | Payload retrieval |" in rendered
+        assert "## Hardware efficiency and host overhead" in rendered
+        assert "Batch P99 (µs)" in rendered
+        assert "CPU normalization P50 (µs)" in rendered
 
 
 if __name__ == "__main__":

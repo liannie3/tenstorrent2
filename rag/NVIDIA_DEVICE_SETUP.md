@@ -19,8 +19,26 @@ nvidia-smi || true
 tegrastats --interval 1000
 ```
 
-Stop `tegrastats` after confirming it reports data. Record the JetPack, CUDA, driver,
-device, power-mode, and clock configuration with retained results.
+Stop `tegrastats` after confirming it reports data. List the available Jetson power
+modes and record the active mode before changing it:
+
+```bash
+sudo nvpmodel -q --verbose
+sudo nvpmodel -p --verbose
+```
+
+Choose the approved project power mode, then hold it constant for every retained run.
+If the experiment uses maximum clocks, apply and verify them before both the NVIDIA and
+Tenstorrent comparison campaigns:
+
+```bash
+sudo nvpmodel -m MODE_ID
+sudo jetson_clocks
+sudo jetson_clocks --show
+```
+
+Do not silently select a power mode: record `MODE_ID`, whether `jetson_clocks` is active,
+and the CPU governor in the benchmark manifest using the harness options shown below.
 
 ## 2. Clone and prepare Python
 
@@ -62,42 +80,121 @@ Available backends are:
 
 ## 4. Smoke test
 
+Generate the small functional fixture explicitly. The default generator now creates the
+3,400-entry baseline and is unnecessarily large for a smoke test:
+
+```bash
+python tools/generate_corpus.py \
+  --output bench_data/smoke-8 --entries 8
+```
+
 ```bash
 python tools/bench_harness.py \
   --rag-bench build-cuda/rag_bench \
-  --bank bench_data/bank.bin \
-  --queries bench_data/queries.f32 \
-  --expected bench_data/expected.json \
+  --bank bench_data/smoke-8/bank.bin \
+  --queries bench_data/smoke-8/queries.f32 \
+  --expected bench_data/smoke-8/expected.json \
   --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 \
   --batches 1 --warmup 1 --iters 1 --trials 1 \
   --telemetry-provider jetson \
-  --results results/smoke-nvidia
+  --telemetry-power-rail VDD_GPU_SOC \
+  --run-kind smoke
 ```
 
 Use `--telemetry-provider nvidia` instead of `jetson` on systems where `nvidia-smi`
 reports temperature, power, clocks, utilization, and thermal slowdown state. Inspect
 `rag_telemetry.csv` for sampling errors before starting the retained campaign.
+On Jetson, the same run also writes every power rail present in each `tegrastats`
+sample to `rag_power_rails.csv`; no per-rail benchmark reruns are required.
+Confirm the selected rail exists on the device. Use `VIN_SYS_5V0` when the study requires
+the broadest available module-level boundary; use `VDD_GPU_SOC` only for the GPU/SOC rail.
+Never compare energy values collected from different rail boundaries.
 
-## 5. Authoritative latency and thermal run
+## 5. Generate the baseline and scaling banks
+
+The standard sweep is 10, 100, 3,400, and 10,000 entries. Generation writes about
+5.4 GiB of bank payloads in total, plus temporary JSONL data while each bank is packed.
+Verify free disk space first:
+
+```bash
+df -h .
+python tools/generate_corpus.py \
+  --output bench_data/sweep \
+  --sweep 10,100,3400,10000
+```
+
+Each `entries-N` directory contains a bank, queries, expected results, and hashes. The
+3,400-entry bank is the paper-comparison baseline. The 8-entry bank remains a smoke
+fixture and must not be reported as platform performance.
+
+## 6. Authoritative release and telemetry campaign
+
+Set a single UTC run date so release, timing, profiles, and reports cannot split across
+two dated directories if the campaign crosses midnight:
+
+```bash
+export RUN_DATE=$(date -u +%F)
+```
+
+Run the 3,400-entry baseline first. Use a measured phase long enough to place at least two
+telemetry samples inside every trial; otherwise J/query is deliberately left empty.
 
 ```bash
 python tools/bench_harness.py \
   --rag-bench build-cuda/rag_bench \
-  --bank bench_data/bank.bin \
-  --queries bench_data/queries.f32 \
-  --expected bench_data/expected.json \
+  --bank bench_data/sweep/entries-3400/bank.bin \
+  --queries bench_data/sweep/entries-3400/queries.f32 \
+  --expected bench_data/sweep/entries-3400/expected.json \
   --backends cpu,cuda-reference,cuda-optimized,cuda-optimized:bf16 \
-  --batches 1,2,4,8,16,32,64,128 \
+  --batches 1,4,16,32,128 \
   --warmup 10 --iters 100 --trials 10 \
   --telemetry-provider jetson --telemetry-interval-ms 500 \
-  --results results/nvidia-release
+  --telemetry-power-rail VDD_GPU_SOC \
+  --power-mode MODE_ID \
+  --clock-policy jetson_clocks \
+  --cpu-governor GOVERNOR \
+  --run-date "$RUN_DATE" \
+  --run-kind release
 ```
 
 Thermal sampling runs outside the benchmark child process and does not change its
-`steady_clock` timing boundary. It covers the complete child process, including startup,
-so current power samples are not converted into energy per query.
+`steady_clock` timing boundary. The raw file retains complete-process telemetry, while
+energy is trapezoid-integrated only over samples assigned to the final measured phase.
+Inspect `rag_telemetry.csv`, `rag_power_rails.csv`, and `rag_thermal_layer.csv`. Treat
+J/query as unavailable when there are fewer than two measured samples, sampling errors,
+or a maximum sample gap too large for the workload duration.
 
-## 6. CUDA-event hardware timing
+Validate the retained baseline before reporting it:
+
+```bash
+python tools/validate_campaign.py "results/$RUN_DATE/release"
+```
+
+The validator requires at least 3,400 entries, ten trials, batches 1/4/16/32/128, passing
+quality gates, and throughput CV no greater than 5%.
+
+After the baseline passes, run the remaining bank sizes with `tools/run_bank_sweep.py`,
+or invoke the harness per existing `entries-N` directory when the banks were generated
+in advance. Keep each size in a separate result directory.
+
+```bash
+python tools/run_bank_sweep.py \
+  --rag-bench build-cuda/rag_bench \
+  --data-root bench_data/sweep \
+  --results-root "results/$RUN_DATE/scaling" \
+  --sizes 10,100,3400,10000 \
+  --backends cpu,cuda-optimized,cuda-optimized:bf16 \
+  --batches 1,4,16,32,128 \
+  --trials 10 --warmup 10 --iters 100 \
+  --telemetry-provider jetson \
+  --telemetry-power-rail VDD_GPU_SOC \
+  --power-mode MODE_ID \
+  --clock-policy jetson_clocks \
+  --cpu-governor GOVERNOR \
+  --skip-generation
+```
+
+## 7. CUDA-event hardware timing
 
 Use a separate build so event overhead cannot affect release results:
 
@@ -112,19 +209,24 @@ ctest --test-dir build-cuda-timing --output-on-failure
 
 python tools/bench_harness.py \
   --rag-bench build-cuda-timing/rag_bench \
-  --bank bench_data/bank.bin \
-  --queries bench_data/queries.f32 \
-  --expected bench_data/expected.json \
+  --bank bench_data/sweep/entries-3400/bank.bin \
+  --queries bench_data/sweep/entries-3400/queries.f32 \
+  --expected bench_data/sweep/entries-3400/expected.json \
   --backends cuda-optimized,cuda-optimized:bf16 \
-  --batches 1,2,4,8,16,32,64,128 \
+  --batches 1,4,16,32,128 \
   --warmup 10 --iters 100 --trials 10 \
-  --results results/nvidia-cuda-timing
+  --power-mode MODE_ID \
+  --clock-policy jetson_clocks \
+  --cpu-governor GOVERNOR \
+  --run-date "$RUN_DATE" \
+  --run-kind cuda-timing
 ```
 
-This run supplies H2D, conversion, GEMM, reduction, D2H, and total device-stage metrics.
-It does not supply published application latency.
+This run supplies H2D, conversion, GEMM, reduction, D2H, and total device-stage
+P50/P95/P99 metrics, plus persistent, peak, and workspace device-memory accounting. It
+does not supply published application latency.
 
-## 7. Nsight Systems and NVTX
+## 8. Nsight Systems, Nsight Compute, and NVTX
 
 ```bash
 cmake -S . -B build-cuda-nvtx -G Ninja \
@@ -133,40 +235,63 @@ cmake -S . -B build-cuda-nvtx -G Ninja \
   -DRAG_ENABLE_NVTX=ON \
   -DRAG_CUDA_ARCHITECTURES=87
 cmake --build build-cuda-nvtx
-mkdir -p results/profiles/nvidia
+mkdir -p "results/$RUN_DATE/profiles"
 
 nsys profile \
   --trace=cuda,nvtx,cublas,osrt \
   --sample=none \
   --force-overwrite=true \
-  --output=results/profiles/nvidia/cuda-optimized-fp32-b32 \
+  --output="results/$RUN_DATE/profiles/cuda-optimized-fp32-b32" \
   build-cuda-nvtx/rag_bench \
-  bench_data/bank.bin bench_data/queries.f32 bench_data/expected.json \
+  bench_data/sweep/entries-3400/bank.bin \
+  bench_data/sweep/entries-3400/queries.f32 \
+  bench_data/sweep/entries-3400/expected.json \
   --backend cuda-optimized --precision fp32 \
   --batch 32 --warmup 10 --iters 5
 
-nsys stats results/profiles/nvidia/cuda-optimized-fp32-b32.nsys-rep
+nsys stats "results/$RUN_DATE/profiles/cuda-optimized-fp32-b32.nsys-rep" \
+  > "results/$RUN_DATE/profiles/nsys-stats.txt"
 ```
 
 Use Nsight Systems to inspect CPU/CUDA timelines, copies, streams, launch gaps, and NVTX
 ranges. Use Nsight Compute only after the timeline identifies a kernel that warrants
 counter-level analysis. Neither tool supplies published application percentiles.
 
-## 8. Report and artifacts
+For one representative FP32 and BF16 configuration, collect an Nsight Compute report
+containing the SpeedOfLight and MemoryWorkloadAnalysis sections. Keep the capture short:
+
+```bash
+ncu --set full --target-processes all \
+  --export "results/$RUN_DATE/profiles/cuda-optimized-fp32-b32" \
+  build-cuda/rag_bench \
+  bench_data/sweep/entries-3400/bank.bin \
+  bench_data/sweep/entries-3400/queries.f32 \
+  bench_data/sweep/entries-3400/expected.json \
+  --backend cuda-optimized --precision fp32 \
+  --batch 32 --warmup 2 --iters 1
+```
+
+Nsight Compute is diagnostic. Do not use its request duration as release latency.
+
+## 9. Report and artifacts
 
 ```bash
 python tools/render_report.py \
-  --results results/nvidia-release \
-  --report docs/performance_evaluation.md
+  --run-dir "results/$RUN_DATE"
+python tools/plot_results.py "results/$RUN_DATE"
 ```
 
-Retain these layers separately:
+Retain these layers separately inside the same dated bundle:
 
-- `results/nvidia-release`: application latency and thermal telemetry.
-- `results/nvidia-cuda-timing`: CUDA-event device stages.
-- `results/profiles/nvidia`: diagnostic Nsight reports.
+- `results/YYYY-MM-DD/release`: application latency and thermal telemetry.
+- `results/YYYY-MM-DD/cuda-timing`: CUDA-event device stages.
+- `results/YYYY-MM-DD/profiles`: diagnostic Nsight reports and saved `nsys stats` output.
+- `results/YYYY-MM-DD/report`: combined report and presentation charts.
 
-## 9. Real data
+Also retain `rag_run_manifest.json`, all raw trial CSVs, `rag_power_rails.csv`, and the
+output of `tools/validate_campaign.py` with the campaign archive.
+
+## 10. Real data
 
 Generate the deterministic fixture only when intentionally replacing it:
 

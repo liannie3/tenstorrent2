@@ -102,7 +102,10 @@ def main() -> int:
         ),
     )
     arguments = parser.parse_args()
-
+    requested_backends = [
+        backend.strip() for backend in arguments.backends.split(",")
+        if backend.strip()
+    ]
     rows = [
         evaluate_backend(
             arguments.rag_bench,
@@ -114,8 +117,7 @@ def main() -> int:
             required_gate=arguments.required_gate,
             score_tolerance=arguments.score_tolerance,
         )
-        for backend in arguments.backends.split(",")
-        if backend.strip()
+        for backend in requested_backends
     ]
     write_csv(arguments.output, FIELDS, rows)
     failed = [row["backend"] for row in rows if row["passed"] != "true"]

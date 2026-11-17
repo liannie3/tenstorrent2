@@ -500,6 +500,21 @@ TimedSearchResult CudaOptimizedSearcher::search_batch_timed(
   }
   timing.buffer_preparation_us =
       elapsed_us(preparation_start, Clock::now());
+  const std::size_t key_element_size =
+      impl_->precision == SearchPrecision::fp32
+          ? sizeof(float) : sizeof(__nv_bfloat16);
+  const std::size_t query_element_size = key_element_size;
+  timing.persistent_device_bytes =
+      static_cast<std::size_t>(impl_->count) * kTextDim * key_element_size;
+  timing.workspace_bytes =
+      impl_->capacity * kTextDim * query_element_size
+      + (impl_->precision == SearchPrecision::bf16
+             ? impl_->capacity * kTextDim * sizeof(float) : 0)
+      + impl_->capacity * impl_->count * sizeof(float)
+      + impl_->capacity * sizeof(DeviceMatch);
+  timing.peak_device_bytes =
+      timing.persistent_device_bytes + timing.workspace_bytes;
+  timing.device_memory_available = true;
   const std::size_t element_count = query_count * kTextDim;
 #ifdef RAG_HAS_CUDA_TIMING
   check_cuda(cudaEventRecord(impl_->total_start->get()), "record total start");

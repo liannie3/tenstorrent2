@@ -1,0 +1,23 @@
+{
+  "schema": "rag-metric-contracts-v1",
+  "missing_value": "Empty CSV fields mean unavailable; numeric zero means measured zero.",
+  "run_modes": {
+    "release": "Authoritative host-facing latency and throughput; instrumentation disabled.",
+    "cuda-timing": "CUDA-event and host-stage diagnostics; never substitutes for release latency.",
+    "telemetry": "Long-running release workload with external power, thermal, clock, and utilization sampling.",
+    "nsight-systems": "Short timeline diagnosis; never a percentile source.",
+    "nsight-compute": "Representative kernel counters; never a request-latency source."
+  },
+  "metrics": [
+    {"name": "request_latency", "level": "application", "unit": "ms", "statistics": ["p50", "p95", "p99"], "source": "steady_clock", "authoritative_mode": "release"},
+    {"name": "throughput", "level": "application", "unit": "query/s", "statistics": ["trial_mean", "cv"], "source": "measured-phase wall clock", "authoritative_mode": "release"},
+    {"name": "energy_per_query", "level": "application", "unit": "J/query", "statistics": ["trial_mean"], "source": "trapezoidal integration of an identified power rail", "authoritative_mode": "telemetry"},
+    {"name": "quality", "level": "application", "unit": "agreement/error", "statistics": ["top1_agreement", "gate_agreement", "mean_abs_error", "max_abs_error"], "source": "FP32 CPU reference", "authoritative_mode": "release"},
+    {"name": "startup", "level": "application", "unit": "ms", "statistics": ["mean", "sample_sd"], "source": "steady_clock", "authoritative_mode": "release"},
+    {"name": "service_stage", "level": "stage", "unit": "ms/batch", "statistics": ["p50", "p95", "p99", "critical_path_pct"], "source": "steady_clock", "authoritative_mode": "release"},
+    {"name": "cuda_stage", "level": "stage", "unit": "us/batch", "statistics": ["p50", "p95", "p99"], "source": "CUDA events on the execution stream", "authoritative_mode": "cuda-timing"},
+    {"name": "transfer", "level": "hardware", "unit": "bytes/query and GB/s", "statistics": ["mean_bytes", "effective_bandwidth"], "source": "backend byte counts and CUDA events", "authoritative_mode": "cuda-timing"},
+    {"name": "memory", "level": "hardware", "unit": "bytes", "statistics": ["persistent", "peak", "workspace", "peak_host_rss"], "source": "backend allocation accounting and OS RSS", "authoritative_mode": "cuda-timing"},
+    {"name": "telemetry", "level": "hardware", "unit": "provider-specific", "statistics": ["mean", "min", "max", "thermal_rise", "throttle_count", "max_sample_gap"], "source": "nvidia-smi or tegrastats", "authoritative_mode": "telemetry"}
+  ]
+}

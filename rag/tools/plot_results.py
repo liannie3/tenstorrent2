@@ -348,7 +348,13 @@ def main() -> int:
     parser.add_argument("results", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    output = args.output or args.results / "presentation-charts"
+    run_dir = args.results
+    if not (run_dir / "rag_run_manifest.json").is_file() and (run_dir / "release").is_dir():
+        args.results = run_dir / "release"
+        default_output = run_dir / "report" / "charts"
+    else:
+        default_output = args.results / "presentation-charts"
+    output = args.output or default_output
     output.mkdir(parents=True, exist_ok=True)
 
     manifest = json.loads((args.results / "rag_run_manifest.json").read_text(encoding="utf-8"))

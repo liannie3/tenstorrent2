@@ -5,7 +5,9 @@ from __future__ import annotations
 import csv
 import io
 import subprocess
+import sys
 from pathlib import Path
+from typing import Mapping
 
 
 RAW_FIELDS = [
@@ -29,6 +31,10 @@ RAW_FIELDS = [
     "device_total_us",
     "h2d_bytes",
     "d2h_bytes",
+    "persistent_device_bytes",
+    "peak_device_bytes",
+    "workspace_bytes",
+    "device_memory_available",
     "device_timing_available",
     "cuda_timing_enabled",
     "nvtx_enabled",
@@ -63,10 +69,18 @@ def run_benchmark(
     iterations: int = 1,
     threshold: float | None = None,
     raw_output: Path | None = None,
+    backend_executables: Mapping[str, Path] | None = None,
 ) -> list[dict[str, str]]:
     backend, precision = parse_backend(backend_spec)
-    command = [
-        str(executable),
+    selected_executable = (
+        backend_executables.get(backend, executable)
+        if backend_executables else executable
+    )
+    command = []
+    if selected_executable.suffix.lower() == ".py":
+        command.append(sys.executable)
+    command.extend([
+        str(selected_executable),
         str(bank),
         str(queries),
         str(expected),
@@ -80,7 +94,7 @@ def run_benchmark(
         str(warmup),
         "--iters",
         str(iterations),
-    ]
+    ])
     if threshold is not None:
         command.extend(["--threshold", str(threshold)])
 

@@ -132,6 +132,12 @@ RunResult run(
           measured.device_total_us = search_result.timing.device_total_us;
           measured.h2d_bytes = search_result.timing.h2d_bytes;
           measured.d2h_bytes = search_result.timing.d2h_bytes;
+          measured.persistent_device_bytes =
+              search_result.timing.persistent_device_bytes;
+          measured.peak_device_bytes = search_result.timing.peak_device_bytes;
+          measured.workspace_bytes = search_result.timing.workspace_bytes;
+          measured.device_memory_available =
+              search_result.timing.device_memory_available;
           measured.device_timing_available =
               search_result.timing.device_timing_available;
 #ifdef RAG_HAS_CUDA_TIMING

@@ -77,13 +77,21 @@ def build(source, target, metadata=None):
         "text_dim": TEXT_DIM,
         "visual_shape": [101, 1024],
         "storage_dtype": "float32_little_endian",
-        "input_jsonl_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "input_jsonl_sha256": file_sha256(source),
         "metadata": metadata or {},
     }
     target.with_suffix(target.suffix + ".json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     print(f"wrote {count} entries to {target}")
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # Command-line interface

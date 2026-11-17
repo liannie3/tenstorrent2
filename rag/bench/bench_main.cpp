@@ -128,7 +128,20 @@ void print_record(const rag::bench::Record& record) {
   if (record.device_timing_available) {
     std::cout << record.d2h_bytes;
   }
+  std::cout << ',';
+  if (record.device_memory_available) {
+    std::cout << record.persistent_device_bytes;
+  }
+  std::cout << ',';
+  if (record.device_memory_available) {
+    std::cout << record.peak_device_bytes;
+  }
+  std::cout << ',';
+  if (record.device_memory_available) {
+    std::cout << record.workspace_bytes;
+  }
   std::cout << ','
+            << record.device_memory_available << ','
             << record.device_timing_available << ','
             << record.cuda_timing_enabled << ','
             << record.nvtx_enabled << ','
@@ -164,6 +177,10 @@ void apply_timing(
   record.device_total_us = timing.device_total_us;
   record.h2d_bytes = timing.h2d_bytes;
   record.d2h_bytes = timing.d2h_bytes;
+  record.persistent_device_bytes = timing.persistent_device_bytes;
+  record.peak_device_bytes = timing.peak_device_bytes;
+  record.workspace_bytes = timing.workspace_bytes;
+  record.device_memory_available = timing.device_memory_available;
   record.device_timing_available = timing.device_timing_available;
 #ifdef RAG_HAS_CUDA_TIMING
   record.cuda_timing_enabled = true;
@@ -283,7 +300,9 @@ int main(int argc, char** argv) {
            "cpu_normalization_us,buffer_preparation_us,"
            "host_result_construction_us,h2d_us,conversion_us,gemm_us,"
            "reduction_us,d2h_us,device_total_us,h2d_bytes,d2h_bytes,"
-           "device_timing_available,cuda_timing_enabled,nvtx_enabled,"
+           "persistent_device_bytes,peak_device_bytes,workspace_bytes,"
+           "device_memory_available,device_timing_available,"
+           "cuda_timing_enabled,nvtx_enabled,"
            "payload_bytes,peak_host_rss_bytes,accepted,id,score\n";
     print_record(make_phase_record(
         options.backend,

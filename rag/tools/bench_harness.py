@@ -9,6 +9,7 @@ import math
 import platform
 import statistics
 import struct
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,9 +17,12 @@ from benchmark_common import parse_backend, run_benchmark, write_csv
 from quality_gate import FIELDS as QUALITY_FIELDS
 from quality_gate import evaluate_backend
 from telemetry import (
+    POWER_RAIL_FIELDS,
     SAMPLE_FIELDS as TELEMETRY_FIELDS,
     SUMMARY_FIELDS as THERMAL_FIELDS,
     TelemetrySampler,
+    expand_power_rails,
+    mark_measured_phase,
     summarize as summarize_telemetry,
 )
 
@@ -45,8 +49,12 @@ MEMORY_FIELDS = [
 HARDWARE_FIELDS = [
     "Test", "Platform", "Batch", "Type", "Trials", "Samples",
     "Device batch P50 us", "Device batch P95 us", "Device batch P99 us",
-    "Device us/query", "H2D P50 us", "Conversion P50 us", "GEMM P50 us",
-    "Reduction P50 us", "D2H P50 us", "Transfer us", "Transfer bytes/query",
+    "Device us/query", "H2D P50 us", "H2D P95 us", "H2D P99 us",
+    "Conversion P50 us", "Conversion P95 us", "Conversion P99 us",
+    "GEMM P50 us", "GEMM P95 us", "GEMM P99 us",
+    "Reduction P50 us", "Reduction P95 us", "Reduction P99 us",
+    "D2H P50 us", "D2H P95 us", "D2H P99 us",
+    "Transfer us", "Transfer bytes/query",
     "Effective H2D GB/s", "Effective D2H GB/s", "Effective GOP/s",
     "Effective GB/s", "BW %", "Device/host %", "CPU normalization P50 us",
     "Buffer preparation P50 us", "Host result construction P50 us", "Peak host RSS",
@@ -230,6 +238,14 @@ def hardware_row(
     def p50(field: str) -> float:
         return percentile(values(field), 0.50)
 
+    def stage_percentiles(field: str, label: str) -> dict[str, str]:
+        stage_values = values(field)
+        return {
+            f"{label} P50 us": f"{percentile(stage_values, 0.50):.6f}",
+            f"{label} P95 us": f"{percentile(stage_values, 0.95):.6f}",
+            f"{label} P99 us": f"{percentile(stage_values, 0.99):.6f}",
+        }
+
     device_values = values("device_total_us")
     trials = {sample.get("_trial", "0") for sample in samples}
     h2d = p50("h2d_us")
@@ -252,11 +268,6 @@ def hardware_row(
         "Device batch P95 us": f"{percentile(device_values, 0.95):.6f}",
         "Device batch P99 us": f"{percentile(device_values, 0.99):.6f}",
         "Device us/query": f"{device_p50 / batch:.6f}",
-        "H2D P50 us": f"{h2d:.6f}",
-        "Conversion P50 us": f"{p50('conversion_us'):.6f}",
-        "GEMM P50 us": f"{gemm:.6f}",
-        "Reduction P50 us": f"{p50('reduction_us'):.6f}",
-        "D2H P50 us": f"{d2h:.6f}",
         "Transfer us": f"{h2d + d2h:.6f}",
         "Transfer bytes/query": f"{transfer_bytes_per_query:.3f}",
         "Effective H2D GB/s": f"{h2d_bytes / (h2d * 1000.0):.6f}" if h2d else "",
@@ -267,8 +278,35 @@ def hardware_row(
         "CPU normalization P50 us": f"{p50('cpu_normalization_us'):.6f}",
         "Buffer preparation P50 us": f"{p50('buffer_preparation_us'):.6f}",
         "Host result construction P50 us": f"{p50('host_result_construction_us'):.6f}",
+        "Persistent/peak device memory": (
+            f"{max(int(sample['persistent_device_bytes']) for sample in samples)}/"
+            f"{max(int(sample['peak_device_bytes']) for sample in samples)}"
+            if all(sample.get("device_memory_available") in {"1", "true", "True"}
+                   for sample in samples) else ""
+        ),
+        "Workspace": (
+            str(max(int(sample["workspace_bytes"]) for sample in samples))
+            if all(sample.get("device_memory_available") in {"1", "true", "True"}
+                   for sample in samples) else ""
+        ),
     })
+    for field, label in (
+        ("h2d_us", "H2D"), ("conversion_us", "Conversion"),
+        ("gemm_us", "GEMM"), ("reduction_us", "Reduction"),
+        ("d2h_us", "D2H"),
+    ):
+        row.update(stage_percentiles(field, label))
     return row
+
+
+def command_output(command: list[str]) -> str:
+    try:
+        completed = subprocess.run(
+            command, check=False, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
 def file_sha256(path: Path) -> str:
@@ -293,7 +331,20 @@ def main() -> int:
     parser.add_argument(
         "--results",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "results",
+        help=(
+            "exact output directory; when omitted, writes to "
+            "results/YYYY-MM-DD/<run-kind>"
+        ),
+    )
+    parser.add_argument(
+        "--run-kind",
+        choices=("smoke", "release", "cuda-timing"),
+        default="release",
+        help="subdirectory used by the automatic dated result layout",
+    )
+    parser.add_argument(
+        "--run-date",
+        help="UTC run date as YYYY-MM-DD (defaults to the current UTC date)",
     )
     parser.add_argument(
         "--power-sampler",
@@ -301,13 +352,34 @@ def main() -> int:
     )
     parser.add_argument(
         "--telemetry-provider",
-        choices=("none", "nvidia", "jetson", "tenstorrent"),
+        choices=("none", "nvidia", "jetson"),
         default="none",
         help="sample accelerator temperature, power, and clocks during each trial",
     )
     parser.add_argument("--telemetry-device", type=int, default=0)
     parser.add_argument("--telemetry-interval-ms", type=int, default=500)
+    parser.add_argument(
+        "--telemetry-power-rail", default="unspecified",
+        help=(
+            "physical power boundary reported by the telemetry provider; for "
+            "Jetson this selects the exact tegrastats rail (for example "
+            "VDD_GPU_SOC, VDD_CPU_CV, or VIN_SYS_5V0)"
+        ),
+    )
+    parser.add_argument("--power-mode", default="unspecified")
+    parser.add_argument("--clock-policy", default="unspecified")
+    parser.add_argument("--cpu-governor", default="unspecified")
     arguments = parser.parse_args()
+    if arguments.results is None:
+        run_date = arguments.run_date or datetime.now(timezone.utc).date().isoformat()
+        try:
+            datetime.strptime(run_date, "%Y-%m-%d")
+        except ValueError as error:
+            raise SystemExit("--run-date must use YYYY-MM-DD") from error
+        arguments.results = (
+            Path(__file__).resolve().parents[1]
+            / "results" / run_date / arguments.run_kind
+        )
     if arguments.power_sampler:
         raise SystemExit(
             "--power-sampler has been replaced by --telemetry-provider"
@@ -373,6 +445,7 @@ def main() -> int:
                         arguments.telemetry_provider,
                         arguments.telemetry_device,
                         arguments.telemetry_interval_ms,
+                        arguments.telemetry_power_rail,
                     )
                     sampler.start()
                 try:
@@ -386,7 +459,18 @@ def main() -> int:
                     )
                 finally:
                     if sampler is not None:
-                        for sample in sampler.stop():
+                        trial_samples = sampler.stop()
+                        measured_phases = [
+                            row for row in trial_records
+                            if row["mode"] == "measured_phase"
+                        ]
+                        if measured_phases:
+                            mark_measured_phase(
+                                trial_samples,
+                                float(measured_phases[0]["end_to_end_us"])
+                                / 1_000_000.0,
+                            )
+                        for sample in trial_samples:
                             sample.update({
                                 "backend": backend,
                                 "precision": precision,
@@ -431,6 +515,25 @@ def main() -> int:
                     records, backend, precision, batch, "accepted",
                     "Payload retrieval", "payload_retrieval_us",
                 ))
+            timed_rows = [
+                row for row in submission_rows(records)
+                if row.get("device_timing_available") in {"1", "true", "True"}
+            ]
+            if timed_rows:
+                for label, field in (
+                    ("CPU normalization", "cpu_normalization_us"),
+                    ("Buffer preparation", "buffer_preparation_us"),
+                    ("H2D", "h2d_us"),
+                    ("Conversion", "conversion_us"),
+                    ("GEMM", "gemm_us"),
+                    ("Top-1 reduction", "reduction_us"),
+                    ("D2H", "d2h_us"),
+                    ("Result construction", "host_result_construction_us"),
+                    ("Device total", "device_total_us"),
+                ):
+                    stage_rows.append(stage_row(
+                        records, backend, precision, batch, "all", label, field,
+                    ))
 
             payload_sizes = [
                 int(row["payload_bytes"])
@@ -438,6 +541,11 @@ def main() -> int:
             ]
             measured_phases = [
                 row for row in records if row["mode"] == "measured_phase"
+            ]
+            memory_samples = [
+                row for row in measured_queries(records)
+                if row.get("device_memory_available")
+                in {"1", "true", "True"}
             ]
             memory_rows.append({
                 "Platform": backend,
@@ -451,13 +559,37 @@ def main() -> int:
                 "Peak host RSS": max(
                     int(row["peak_host_rss_bytes"]) for row in measured_phases
                 ),
-                "Persistent device memory": "",
-                "Peak device memory": "",
-                "Workspace bytes": "",
+                "Persistent device memory": (
+                    max(int(row["persistent_device_bytes"]) for row in memory_samples)
+                    if memory_samples else ""
+                ),
+                "Peak device memory": (
+                    max(int(row["peak_device_bytes"]) for row in memory_samples)
+                    if memory_samples else ""
+                ),
+                "Workspace bytes": (
+                    max(int(row["workspace_bytes"]) for row in memory_samples)
+                    if memory_samples else ""
+                ),
             })
             hardware_rows.append(hardware_row(
                 records, backend, precision, batch, static_sizes["Bank entries"]
             ))
+
+    thermal_rows = summarize_telemetry(telemetry_samples)
+    energy_by_configuration = {
+        (row["Platform"], row["Type"], str(row["Batch"])): row["Measured energy J"]
+        for row in thermal_rows if row["Measured energy J"] != ""
+    }
+    measured_query_total = arguments.trials * arguments.iters * query_count
+    for row in application_rows:
+        if not str(row["Mode"]).endswith("/all"):
+            continue
+        energy = energy_by_configuration.get(
+            (str(row["Platform"]), str(row["Type"]), str(row["Batch"]))
+        )
+        if energy is not None:
+            row["J/query"] = f"{float(energy) / measured_query_total:.9f}"
 
     write_csv(arguments.results / "rag_application_layer.csv", APPLICATION_FIELDS,
               application_rows)
@@ -467,11 +599,14 @@ def main() -> int:
               hardware_rows)
     write_csv(arguments.results / "rag_telemetry.csv", TELEMETRY_FIELDS,
               telemetry_samples)
+    write_csv(arguments.results / "rag_power_rails.csv", POWER_RAIL_FIELDS,
+              expand_power_rails(telemetry_samples))
     write_csv(arguments.results / "rag_thermal_layer.csv", THERMAL_FIELDS,
-              summarize_telemetry(telemetry_samples))
+              thermal_rows)
 
     manifest = {
-        "schema": "rag-benchmark-manifest-v3",
+        "schema": "rag-benchmark-manifest-v4",
+        "raw_schema": "rag-benchmark-raw-v2",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "host": platform.platform(),
         "python": platform.python_version(),
@@ -488,8 +623,31 @@ def main() -> int:
                 "provider": arguments.telemetry_provider,
                 "device": arguments.telemetry_device,
                 "interval_ms": arguments.telemetry_interval_ms,
+                "power_rail": arguments.telemetry_power_rail,
                 "scope": "entire benchmark child process per trial",
+                "energy_scope": "final measured phase; requires at least two samples",
             },
+        },
+        "provenance": {
+            "git_revision": command_output([
+                "git", "-C", str(Path(__file__).resolve().parents[1]),
+                "rev-parse", "HEAD",
+            ]),
+            "git_dirty": bool(command_output([
+                "git", "-C", str(Path(__file__).resolve().parents[1]),
+                "status", "--porcelain",
+            ])),
+            "compiler": command_output([str(arguments.rag_bench), "--version"]),
+            "cuda_version": command_output(["nvcc", "--version"]),
+            "driver": command_output([
+                "nvidia-smi", "--query-gpu=driver_version,name,memory.total",
+                "--format=csv,noheader",
+            ]),
+            "nsight_systems_version": command_output(["nsys", "--version"]),
+            "nsight_compute_version": command_output(["ncu", "--version"]),
+            "power_mode": arguments.power_mode,
+            "clock_policy": arguments.clock_policy,
+            "cpu_governor": arguments.cpu_governor,
         },
         "files": {
             name: {"path": str(path.resolve()), "sha256": file_sha256(path)}

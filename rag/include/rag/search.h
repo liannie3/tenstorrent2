@@ -27,6 +27,10 @@ struct SearchTiming {
   double device_total_us = 0.0;
   std::size_t h2d_bytes = 0;
   std::size_t d2h_bytes = 0;
+  std::size_t persistent_device_bytes = 0;
+  std::size_t peak_device_bytes = 0;
+  std::size_t workspace_bytes = 0;
+  bool device_memory_available = false;
   bool device_timing_available = false;
 };
 

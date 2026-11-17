@@ -1,0 +1,9 @@
+/build/
+/build-*/
+/results/
+/bench_data/*/
+/.uv-cache/
+/.venv/
+/.pytest_cache/
+__pycache__/
+*.py[cod]
