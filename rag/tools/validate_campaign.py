@@ -26,8 +26,8 @@ def main() -> int:
     manifest = json.loads(
         (args.results / "rag_run_manifest.json").read_text(encoding="utf-8")
     )
-    if manifest.get("schema") != "rag-benchmark-manifest-v4":
-        errors.append("manifest is not rag-benchmark-manifest-v4")
+    if manifest.get("schema") != "rag-benchmark-manifest-v5":
+        errors.append("manifest is not rag-benchmark-manifest-v5")
     if int(manifest.get("independent_trials", 0)) < args.minimum_trials:
         errors.append(f"fewer than {args.minimum_trials} independent trials")
 

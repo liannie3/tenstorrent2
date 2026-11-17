@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef RAG_HAS_TRACY
+#include <tracy/Tracy.hpp>
+#endif
+
 #ifdef RAG_HAS_NVTX
 #if __has_include(<nvtx3/nvToolsExt.h>)
 #include <nvtx3/nvToolsExt.h>
@@ -34,5 +38,11 @@ class ScopedRange {
 
 #define RAG_PROFILE_JOIN_IMPL(left, right) left##right
 #define RAG_PROFILE_JOIN(left, right) RAG_PROFILE_JOIN_IMPL(left, right)
+#ifdef RAG_HAS_TRACY
+#define RAG_PROFILE_RANGE(name)                                               \
+  ZoneNamedN(RAG_PROFILE_JOIN(rag_tracy_range_, __LINE__), name, true);       \
+  ::rag::profile::ScopedRange RAG_PROFILE_JOIN(rag_profile_range_, __LINE__)(name)
+#else
 #define RAG_PROFILE_RANGE(name) \
   ::rag::profile::ScopedRange RAG_PROFILE_JOIN(rag_profile_range_, __LINE__)(name)
+#endif

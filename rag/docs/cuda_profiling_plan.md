@@ -13,7 +13,7 @@ on the Jetson benchmark host.
 - [x] Finish the branch migration: keep the Jetson implementation on
   `al/rag-jetson` and move the Tenstorrent implementation to
   `al/rag-tenstorrent`.
-- [ ] After that migration, add optional Tracy instrumentation to the NVIDIA path
+- [x] Add optional Tracy instrumentation to the NVIDIA path
   using the same backend-neutral request and host-stage zone names as the
   Tenstorrent path.
 - [ ] Keep `steady_clock` as the authoritative source for unprofiled application
@@ -41,6 +41,7 @@ These mechanisms complement rather than replace the existing host timer:
 | --- | --- | --- |
 | `steady_clock` | Caller-visible elapsed time | Yes: application latency and throughput |
 | CUDA events | CUDA-stream stage durations | Yes: hardware-layer CUDA metrics |
+| Tracy + CUPTI | Correlated CPU/CUDA timeline | No: diagnostic evidence only |
 | NVTX | Semantic labels for code regions | No: annotations only |
 | Nsight Systems | External CPU/GPU timeline and diagnosis | No: diagnostic evidence |
 

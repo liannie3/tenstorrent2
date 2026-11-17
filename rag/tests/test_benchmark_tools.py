@@ -154,11 +154,12 @@ def main():
         manifest_path = results / "rag_run_manifest.json"
         assert manifest_path.is_file()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["schema"] == "rag-benchmark-manifest-v4"
-        assert manifest["raw_schema"] == "rag-benchmark-raw-v2"
+        assert manifest["schema"] == "rag-benchmark-manifest-v5"
+        assert manifest["raw_schema"] == "rag-benchmark-raw-v3"
         instrumentation = manifest["instrumentation"]
         assert isinstance(instrumentation["cuda_event_timing"], bool)
         assert isinstance(instrumentation["nvtx"], bool)
+        assert isinstance(instrumentation["tracy"], bool)
         assert instrumentation["telemetry"] == {
             "provider": "none",
             "device": 0,

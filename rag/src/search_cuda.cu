@@ -5,6 +5,10 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
+#ifdef RAG_HAS_TRACY
+#include <tracy/TracyCUDA.hpp>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -40,6 +44,26 @@ void check_cublas(cublasStatus_t status, const char* operation) {
 double elapsed_us(Clock::time_point start, Clock::time_point finish) {
   return std::chrono::duration<double, std::micro>(finish - start).count();
 }
+
+#ifdef RAG_HAS_TRACY
+tracy::CUDACtx* create_tracy_cuda_context() {
+  auto* context = TracyCUDAContext();
+  constexpr char kContextName[] = "NVIDIA CUDA";
+  TracyCUDAContextName(context, kContextName, sizeof(kContextName) - 1);
+  TracyCUDAStartProfiling(context);
+  return context;
+}
+
+void destroy_tracy_cuda_context(tracy::CUDACtx*& context) noexcept {
+  if (context == nullptr) {
+    return;
+  }
+  TracyCUDAStopProfiling(context);
+  TracyCUDACollect(context);
+  TracyCUDAContextDestroy(context);
+  context = nullptr;
+}
+#endif
 
 #ifdef RAG_HAS_CUDA_TIMING
 class CudaEvent {
@@ -207,6 +231,9 @@ CudaSearcher::CudaSearcher(const Bank& bank) : count_(bank.size()) {
       static_cast<std::size_t>(count_) * sizeof(float);
 
   try {
+#ifdef RAG_HAS_TRACY
+    tracy_cuda_context_ = create_tracy_cuda_context();
+#endif
     check_cuda(
         cudaMalloc(reinterpret_cast<void**>(&device_keys_), key_bytes),
         "cudaMalloc keys");
@@ -227,6 +254,9 @@ CudaSearcher::CudaSearcher(const Bank& bank) : count_(bank.size()) {
     cudaFree(device_keys_);
     cudaFree(device_query_);
     cudaFree(device_scores_);
+#ifdef RAG_HAS_TRACY
+    destroy_tracy_cuda_context(tracy_cuda_context_);
+#endif
     throw;
   }
 }
@@ -235,6 +265,9 @@ CudaSearcher::~CudaSearcher() {
   cudaFree(device_keys_);
   cudaFree(device_query_);
   cudaFree(device_scores_);
+#ifdef RAG_HAS_TRACY
+  destroy_tracy_cuda_context(tracy_cuda_context_);
+#endif
 }
 
 // CUDA retrieval
@@ -292,6 +325,9 @@ struct CudaOptimizedSearcher::Impl {
   explicit Impl(const Bank& bank, SearchPrecision requested_precision)
       : count(bank.size()), precision(requested_precision) {
     try {
+#ifdef RAG_HAS_TRACY
+      tracy_cuda_context = create_tracy_cuda_context();
+#endif
       check_cublas(cublasCreate(&handle), "cublasCreate");
 #ifdef RAG_HAS_CUDA_TIMING
       total_start = std::make_unique<CudaEvent>();
@@ -365,6 +401,9 @@ struct CudaOptimizedSearcher::Impl {
     if (handle != nullptr) {
       cublasDestroy(handle);
     }
+#ifdef RAG_HAS_TRACY
+    destroy_tracy_cuda_context(tracy_cuda_context);
+#endif
     device_keys = nullptr;
     device_queries = nullptr;
     device_float_queries = nullptr;
@@ -431,6 +470,9 @@ struct CudaOptimizedSearcher::Impl {
   float* device_scores = nullptr;
   DeviceMatch* device_matches = nullptr;
   std::size_t capacity = 0;
+#ifdef RAG_HAS_TRACY
+  tracy::CUDACtx* tracy_cuda_context = nullptr;
+#endif
 #ifdef RAG_HAS_CUDA_TIMING
   std::unique_ptr<CudaEvent> total_start;
   std::unique_ptr<CudaEvent> h2d_start;

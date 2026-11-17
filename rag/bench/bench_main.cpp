@@ -145,6 +145,7 @@ void print_record(const rag::bench::Record& record) {
             << record.device_timing_available << ','
             << record.cuda_timing_enabled << ','
             << record.nvtx_enabled << ','
+            << record.tracy_enabled << ','
             << record.payload_bytes << ','
             << record.peak_host_rss_bytes << ','
             << record.match.accepted << ','
@@ -187,6 +188,9 @@ void apply_timing(
 #endif
 #ifdef RAG_HAS_NVTX
   record.nvtx_enabled = true;
+#endif
+#ifdef RAG_HAS_TRACY
+  record.tracy_enabled = true;
 #endif
 }
 
@@ -302,7 +306,7 @@ int main(int argc, char** argv) {
            "reduction_us,d2h_us,device_total_us,h2d_bytes,d2h_bytes,"
            "persistent_device_bytes,peak_device_bytes,workspace_bytes,"
            "device_memory_available,device_timing_available,"
-           "cuda_timing_enabled,nvtx_enabled,"
+           "cuda_timing_enabled,nvtx_enabled,tracy_enabled,"
            "payload_bytes,peak_host_rss_bytes,accepted,id,score\n";
     print_record(make_phase_record(
         options.backend,

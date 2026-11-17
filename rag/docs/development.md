@@ -90,6 +90,32 @@ Use the ordinary CUDA build, with event timing disabled, for authoritative appli
 latency and throughput. Use the timing build for hardware-layer results until an A/B study
 shows that event recording stays within the project's accepted overhead budget.
 
+## Tracy and CUPTI
+
+Tracy v0.14.0 provides the common correlated host/device diagnostic timeline. Clone or
+install that exact version, then build a dedicated profiling binary. The Tracy CUDA
+collector requires CUDA 12.4 or newer and the CUPTI development library.
+
+```bash
+git clone --branch v0.14.0 --depth 1 \
+  https://github.com/wolfpld/tracy.git /opt/tracy-v0.14.0
+cmake -S . -B build-cuda-tracy \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DRAG_ENABLE_CUDA=ON \
+  -DRAG_ENABLE_TRACY=ON \
+  -DRAG_TRACY_SOURCE_DIR=/opt/tracy-v0.14.0
+cmake --build build-cuda-tracy
+```
+
+Start the matching Tracy v0.14.0 profiler before launching a short representative
+`rag_bench` run. The CUPTI collector records CUDA kernels, copies, synchronizations,
+streams, and CUDA Graph launches automatically. The `RAG_PROFILE_RANGE` zones provide
+stable RAG stage names on the host timeline.
+
+Do not run Tracy/CUPTI collection under Nsight, and do not use Tracy runs for published
+P50/P95/P99 latency. Compare the Tracy build's `steady_clock` results with the release
+build to quantify profiler overhead separately.
+
 ## NVTX and Nsight Systems
 
 Build NVTX annotations separately from the authoritative latency build:

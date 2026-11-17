@@ -4,12 +4,16 @@ project(rag_retrieval LANGUAGES CXX)
 option(RAG_ENABLE_CUDA "Build the CUDA retrieval backend" OFF)
 option(RAG_ENABLE_CUDA_TIMING "Collect CUDA event timing" OFF)
 option(RAG_ENABLE_NVTX "Enable NVTX profiling annotations" OFF)
-if((RAG_ENABLE_CUDA_TIMING OR RAG_ENABLE_NVTX) AND NOT RAG_ENABLE_CUDA)
+option(RAG_ENABLE_TRACY "Enable Tracy CPU and CUDA/CUPTI profiling" OFF)
+if((RAG_ENABLE_CUDA_TIMING OR RAG_ENABLE_NVTX OR RAG_ENABLE_TRACY)
+   AND NOT RAG_ENABLE_CUDA)
   message(FATAL_ERROR
-    "RAG_ENABLE_CUDA_TIMING and RAG_ENABLE_NVTX require RAG_ENABLE_CUDA=ON")
+    "CUDA timing, NVTX, and Tracy require RAG_ENABLE_CUDA=ON")
 endif()
 set(RAG_CUDA_ARCHITECTURES "87" CACHE STRING
     "CUDA architectures for RAG kernels (87 is Jetson AGX Orin)")
+set(RAG_TRACY_SOURCE_DIR "" CACHE PATH
+    "Optional Tracy v0.14.0 source tree used when RAG_ENABLE_TRACY=ON")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -29,6 +33,24 @@ if(RAG_ENABLE_CUDA)
   endif()
   if(RAG_ENABLE_NVTX)
     target_compile_definitions(rag_core PUBLIC RAG_HAS_NVTX=1)
+  endif()
+  if(RAG_ENABLE_TRACY)
+    if(RAG_TRACY_SOURCE_DIR)
+      add_subdirectory(
+        "${RAG_TRACY_SOURCE_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/tracy"
+        EXCLUDE_FROM_ALL)
+    else()
+      find_package(Tracy 0.14 CONFIG REQUIRED)
+    endif()
+    if(NOT TARGET Tracy::TracyClient)
+      message(FATAL_ERROR "The Tracy package does not provide Tracy::TracyClient")
+    endif()
+    if(NOT TARGET CUDA::cupti)
+      message(FATAL_ERROR "RAG_ENABLE_TRACY requires the CUDA CUPTI development library")
+    endif()
+    target_link_libraries(rag_core PUBLIC Tracy::TracyClient CUDA::cupti)
+    target_compile_definitions(rag_core PUBLIC RAG_HAS_TRACY=1 TRACY_ENABLE=1)
   endif()
   set_target_properties(rag_core PROPERTIES
     CUDA_STANDARD 17
