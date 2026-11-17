@@ -1,25 +1,22 @@
 import argparse
 import copy
-import sys
 from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from clipbench.common import config as cfg          # noqa: E402
-from clipbench.common import data                   # noqa: E402
-from clipbench.common import model as model_lib     # noqa: E402
+from ..common import config as cfg
+from ..common import data
+from . import model_nvidia as model_lib
 
-# Run from anywhere:  python test_scripts/nvidia_parity.py
-# Other images:       python test_scripts/nvidia_parity.py --images a.jpg b.jpg
-# Same accuracy check as tt_clip/test.py: PCC of the NVIDIA encoder output vs fp32 CPU HF, per image.
-ROOT = Path(__file__).resolve().parents[1]
-TT_CLIP = ROOT / "tt_clip"
+# Run from the project root:  python -m clipbench.nvidia.nvidia_parity
+# Other images:               python -m clipbench.nvidia.nvidia_parity --images a.jpg b.jpg
+# Same accuracy check as tt/tt_clip/test.py: PCC of the NVIDIA encoder output vs fp32 CPU HF, per image.
+SAMPLES = Path(__file__).resolve().parents[1] / "common" / "sample_images"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--profile", default="jetson", choices=cfg.available_profiles())
-parser.add_argument("--images", nargs="+", default=[str(TT_CLIP / "cat.jpg"), str(TT_CLIP / "dog.jpg")],
-                    help="image files (default: cat.jpg and dog.jpg from tt_clip)")
+parser.add_argument("--images", nargs="+", default=[str(SAMPLES / "cat.jpg"), str(SAMPLES / "dog.jpg")],
+                    help="image files (default: cat.jpg and dog.jpg in clipbench/common/sample_images)")
 args = parser.parse_args()
 
 image_paths = [Path(p).expanduser() for p in args.images]

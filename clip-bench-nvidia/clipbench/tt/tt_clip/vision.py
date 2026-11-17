@@ -1,6 +1,6 @@
 import ttnn 
-from device import get_device
-from attention import Transformer
+from .device import get_device
+from .attention import Transformer
 
 
 class VisionTransformer:

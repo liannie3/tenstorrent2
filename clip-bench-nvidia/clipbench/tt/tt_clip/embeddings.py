@@ -2,9 +2,9 @@ import ttnn
 import torch 
 import math
 
-from device import get_device
-from vision import VisionTransformer
-from attention import Transformer
+from .device import get_device
+from .vision import VisionTransformer
+from .attention import Transformer
 
 
 class TTClipVisionModel:

@@ -14,4 +14,4 @@ run:
   precision: fp32               # data type
    
 output:   
-  results_dir: results/cpu      # directory for result data
+  results_dir: analysis/results/cpu      # directory for result data

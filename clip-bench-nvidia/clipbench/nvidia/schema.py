@@ -144,6 +144,7 @@ def write_manifest(config, images_by_views, path):
         'platform': config['run']['target'],
         'device': config['run']['device'],
         'precision': config['run']['precision'],
+        'cuda_graph': config['run'].get('cuda_graph', False),
         'model': config['model']['name'],
         'image_processor': config['model'].get('image_processor'),
         'layer_index': config['model']['layer_index'],

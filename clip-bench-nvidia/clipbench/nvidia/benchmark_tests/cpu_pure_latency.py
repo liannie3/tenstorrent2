@@ -14,7 +14,7 @@ import time
 import torch
 
 from ...common import data
-from ...common import model as model_lib
+from .. import model_nvidia as model_lib
 
 
 ## One sub-test: every frame, at a single view count.

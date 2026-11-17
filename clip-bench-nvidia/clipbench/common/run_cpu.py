@@ -23,7 +23,7 @@ import torch
 
 from . import config as cfg
 from . import data
-from . import model as model_lib
+from ..nvidia import model_nvidia as model_lib
 from .schema_cpu import write_manifest, write_stage_csvs
 
 
@@ -113,7 +113,7 @@ def main(argv=None):
     ## Reads from command line (important to have --profile when running program)
     parser = argparse.ArgumentParser(description='CLIP encoder + MLP projector sweep, CPU timing')
     parser.add_argument('--profile', default='cpu', choices=cfg.available_profiles(),
-                        help='config profile from configs/ (default: cpu)')
+                        help='config profile from clipbench/*/configs/ (default: cpu)')
     args = parser.parse_args(argv)
 
     ## 1. Config
@@ -144,7 +144,7 @@ def main(argv=None):
         print(f'  {name:<16} {len(view_paths)} images')
     if not data.num_frames(all_views):
         raise SystemExit('no images found - check data.path and data.view_order in '
-                         f"configs/base.yaml ({config['data']['path']})")
+                         f"clipbench/common/configs/base.yaml ({config['data']['path']})")
 
     ## 4. The timing buffer. Appended to all through the sweep below, read once
     ## at step 5 and not before.

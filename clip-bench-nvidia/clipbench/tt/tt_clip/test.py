@@ -6,22 +6,22 @@ import torch
 import ttnn
 from PIL import Image
 
-from device import open_ttnn, close_ttnn, get_device
-from loaders import download_model            # returns CLIPVisionModel
-from weights import convert_model_to_ttnn
-from preprocess import preprocess_image
-from embeddings import TTClipVisionModel
+from .device import open_ttnn, close_ttnn, get_device
+from .loaders import download_model            # returns CLIPVisionModel
+from .weights import convert_model_to_ttnn
+from .preprocess import preprocess_image
+from .embeddings import TTClipVisionModel
 
-# Run from anywhere:  python test.py
-# Other images:       python test.py --images ~/images/a.jpg ~/images/b.jpg ~/images/c.jpg
+# Run from the project root:  python -m clipbench.tt.tt_clip.test
+# Other images:               python -m clipbench.tt.tt_clip.test --images ~/images/a.jpg ~/images/b.jpg
 MODEL = "openai/clip-vit-large-patch14-336"
 IMAGE_SIZE = 336
 NUM_LAYERS = 23                                 # first 23 of 24 layers (LLaVA select_layer = -2)
-HERE = Path(__file__).resolve().parent          # the tt_clip folder
+SAMPLES = Path(__file__).resolve().parents[2] / "common" / "sample_images"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--images", nargs="+", default=[str(HERE / "cat.jpg"), str(HERE / "dog.jpg")],
-                    help="image files (default: cat.jpg and dog.jpg next to this script)")
+parser.add_argument("--images", nargs="+", default=[str(SAMPLES / "cat.jpg"), str(SAMPLES / "dog.jpg")],
+                    help="image files (default: cat.jpg and dog.jpg in clipbench/common/sample_images)")
 parser.add_argument("--warmup", type=int, default=2, help="untimed warmup passes over all images")
 parser.add_argument("--iters", type=int, default=20, help="timed frames (each frame runs every image once)")
 parser.add_argument("--sweep", action="store_true", help="per-depth PCC sweep only, no timing")

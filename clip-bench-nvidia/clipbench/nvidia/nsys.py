@@ -10,7 +10,7 @@
 
 nvidia/run.py runs this itself. To redo it on an existing capture:
 
-    python -m clipbench.nvidia.nsys results/jetson/sweep.nsys-rep
+    python -m clipbench.nvidia.nsys analysis/results/jetson/sweep.nsys-rep
 """
 
 import argparse

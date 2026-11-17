@@ -15,7 +15,7 @@ import time
 import torch
 
 from ...common import data
-from ...common import model as model_lib
+from .. import model_nvidia as model_lib
 
 
 ## Start/end pair, allocated before the loop so recording one costs nothing but

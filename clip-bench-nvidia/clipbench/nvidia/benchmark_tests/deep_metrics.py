@@ -18,7 +18,7 @@ from torch.cuda import nvtx
 
 from ...common import config as cfg
 from ...common import data
-from ...common import model as model_lib
+from .. import model_nvidia as model_lib
 from .. import nsys as nsys_report
 from ..schema import NSYS_ENV_GUARD, merge_nvtx_column, under_nsys
 

@@ -1,24 +1,22 @@
 import argparse
 import os
-import sys
 import time
 from pathlib import Path
 
-# Run from anywhere:  python xla/test.py            (or `python test.py` from inside xla/)
-# Other images:       python test.py --images ~/images/a.jpg ~/images/b.jpg
-# Max optimization:   python test.py --opt-level 2 --trace
+# Run from the project root:  python -m clipbench.tt.tt_clip.xla.test
+# Other images:               python -m clipbench.tt.tt_clip.xla.test --images ~/images/a.jpg ~/images/b.jpg
+# Max optimization:           python -m clipbench.tt.tt_clip.xla.test --opt-level 2 --trace
 #
 # Same structure as tt_clip/test.py so the two are directly comparable:
 # PCC vs HF fp32 on CPU per image, then a frames x views timing loop.
 MODEL = "openai/clip-vit-large-patch14-336"
 IMAGE_SIZE = 336
 NUM_LAYERS = 23                                 # first 23 of 24 layers (LLaVA select_layer = -2)
-HERE = Path(__file__).resolve().parent          # tt_clip/xla
-TT_CLIP = HERE.parent                           # tt_clip, for the shared loaders and images
+SAMPLES = Path(__file__).resolve().parents[3] / "common" / "sample_images"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--images", nargs="+", default=[str(TT_CLIP / "cat.jpg"), str(TT_CLIP / "dog.jpg")],
-                    help="image files (default: cat.jpg and dog.jpg in tt_clip/)")
+parser.add_argument("--images", nargs="+", default=[str(SAMPLES / "cat.jpg"), str(SAMPLES / "dog.jpg")],
+                    help="image files (default: cat.jpg and dog.jpg in clipbench/common/sample_images)")
 parser.add_argument("--warmup", type=int, default=3,
                     help="untimed warmup passes over all images (TT-XLA docs: at least 3; "
                          "pass 1 compiles, pass 2 captures the trace)")
@@ -35,10 +33,9 @@ if args.trace:
 import torch                                    # noqa: E402
 from PIL import Image                           # noqa: E402
 
-sys.path.insert(0, str(TT_CLIP))                # tt_clip's loaders/preprocess (neither imports ttnn)
-from loaders import download_model              # noqa: E402  returns CLIPVisionModel
-from preprocess import preprocess_image         # noqa: E402
-import clip_xla                                 # noqa: E402
+from ..loaders import download_model            # noqa: E402  returns CLIPVisionModel (no ttnn import)
+from ..preprocess import preprocess_image       # noqa: E402
+from . import clip_xla                          # noqa: E402
 
 image_paths = [Path(p).expanduser() for p in args.images]
 missing = [str(p) for p in image_paths if not p.is_file()]

@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 
 from ...common import data
-from ...common import model as model_lib
+from .. import model_nvidia as model_lib
 
 ## 1000 ms is the tegrastats default, which gives ~8 samples for a views=1
 ## sub-test. 100 ms is enough to see the clock ramp.

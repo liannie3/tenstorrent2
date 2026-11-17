@@ -40,7 +40,7 @@ import torch
 
 from ..common import config as cfg
 from ..common import data
-from ..common import model as model_lib
+from . import model_nvidia as model_lib
 from .benchmark_tests import (cpu_pure_latency, deep_metrics, gpu_pure_latency,
                               hardware_perf)
 from .schema import under_nsys, write_manifest, write_stage_csvs
@@ -73,12 +73,17 @@ def main(argv=None):
     ## Reads from command line (important to have --profile when running program)
     parser = argparse.ArgumentParser(description='CLIP encoder + MLP projector sweep, CUDA event timing')
     parser.add_argument('--profile', default='jetson', choices=cfg.available_profiles(),
-                        help='config profile from configs/ (default: jetson)')
+                        help='config profile from clipbench/*/configs/ (default: jetson)')
     args = parser.parse_args(argv)
 
     ## 1. Config
     config = cfg.load_config(args.profile)
     run = config['run']
+
+    ## Graphed runs get their own results dir so they never overwrite eager ones.
+    ## Set here so deep_metrics (and the nsys child) see the same path.
+    if run.get('cuda_graph', False):
+        config['output']['results_dir'] += '_cudagraph'
 
     ## Make sure the run is on an nvidia device
     if run['target'] != 'nvidia':
@@ -127,7 +132,7 @@ def main(argv=None):
         print(f'  {name:<16} {len(view_paths)} images')
     if not data.num_frames(all_views):
         raise SystemExit('no images found - check data.path and data.view_order in '
-                         f"configs/base.yaml ({config['data']['path']})")
+                         f"clipbench/common/configs/base.yaml ({config['data']['path']})")
 
     ## 5. One test at a time, one sub-test per view count. Each test gets its
     ## own buffer and its own results subdirectory, so the stage names stay the

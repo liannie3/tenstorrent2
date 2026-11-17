@@ -54,6 +54,12 @@ def load_encoder(config):
     model = model.to(config['run']['device'])
     model.eval()
     model.requires_grad_(False)
+
+    ## CUDA Graphs Implementation for the Encoder
+    ## torch.compile() is the PyTorch's built in CUDA Graph code
+    if config['run'].get('cuda_graph', False):
+        model = torch.compile(model, backend='cudagraphs')   # CUDA graphs only, no kernel fusion
+
     return model
 
 
@@ -75,6 +81,12 @@ def load_projector(config, in_dim):
     projector = projector.to(device=run['device'], dtype=resolve_dtype(run['precision']))
     projector.eval()
     projector.requires_grad_(False)
+
+    ## CUDA Graphs Implementation for the MLP
+    ## torch.compile() is the PyTorch's built in CUDA Graph code
+    if run.get('cuda_graph', False):
+        projector = torch.compile(projector, backend='cudagraphs')
+
     return projector
 
 

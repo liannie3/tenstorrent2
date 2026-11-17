@@ -18,4 +18,4 @@ run:
   trace: true                    # false = time gpu_pure_latency eagerly (host dispatch included)
 
 output:
-  results_dir: results/tt        # directory for result data
+  results_dir: analysis/results/tt        # directory for result data
