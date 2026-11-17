@@ -3,12 +3,19 @@ import time
 from contextlib import contextmanager                       
 import shutil #detecting correct hardware monitor
 import subprocess #execute tegrastats during hardware metric run
+import threading #reads tegrastats in the background while benchmark runs
 
 import config
 import results
 import run
 from run import run_pipeline
 from stages import preprocess_stage, inference_stage, postprocess_stage
+
+
+def timestamp(proc, log): #add timestamps with finer granularity than tegrastats second time stamp
+    for line in proc.stdout:
+        log.write(f"{time.time():.4f} {line}")
+
 
 def identify_monitor():
     if shutil.which("tegrastats"): #Jetson
@@ -34,13 +41,17 @@ def hw_monitor():
     log_path = config.BENCH_DIR / f"{name}.log" #tegrastats.log or nvidia_smi.log
 
     with open(log_path, "a") as log:
-        proc = subprocess.Popen(cmd, stdout = log, stderr = subprocess.STDOUT)
+        #start suubprocess and send line right away to get accurate timestamps
+        proc = subprocess.Popen(["stdbuf", "-oL"] + cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, text = True)
+        reader = threading.Thread(target = timestamp, args = (proc, log))
+        reader.start()
         try:
             time.sleep(1) #let the monitor start
             yield name
         finally: #runs even if the pass crashes
             proc.terminate()
             proc.wait()
+            reader.join() #wait for reader to write final line before closing log filke
             config.HARDWARE_METRICS = False
 
 
