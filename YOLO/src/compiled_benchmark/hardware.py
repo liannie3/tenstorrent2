@@ -54,7 +54,9 @@ def hw_monitor():
             reader.join() #wait for reader to write final line before closing log filke
             config.HARDWARE_METRICS = False
 
-
+def print_logs(monitor, path):
+    print(f"  UPDATED: {config.BENCH_DIR / f'{monitor}.log'}  ({monitor} readings, each line starts with time.time())")
+    print(f"  UPDATED: {path}  (start/end time of each window, to pick out the readings inside it)")
 ########################################################################################################################################################################
 #                         | | | |                                                                                                                                      #
 #   Run Pipeline and Main V V V V                                                                                                                                      #
@@ -66,6 +68,7 @@ def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE
         run.run_pipeline(model, img_paths, batch_size, device)
 
     results.store_hw_window(monitor, "full_pipeline", run.hw_window["start"], run.hw_window["end"])
+    print_logs(monitor, config.HARDWARE_PATH) #indicate which logs were updated and where they can be found
 
 #test each substage in isolation over a fixed period and accumulates, averages, then stores associated hardware metrics
 @torch.inference_mode()
@@ -105,4 +108,4 @@ def hardware_substages(model, images, device = config.DEVICE):
             print(f"{name:<16} {n} runs, {(t_end - t_start) / n * 1000:.2f} ms per run")
             time.sleep(1) #further discretize phases of substage testing
 
-    results.store_hw_stages(runs)
+    results.store_hw_stages(runs) #store captured metrics
