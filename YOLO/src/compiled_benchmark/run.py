@@ -57,7 +57,7 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
     #      NOTE: _sync does nothing when substep_timing is false
     stage_wall_timings = {s : [] for s in config.STAGES} #wall clock time to be hollistically measured like ultralytics does NOTE: only valid during sync runs
     if not (setting == "e2e"):
-    hw_window["start"] = time.time()
+        hw_window["start"] = time.time()
         for imgs in loaded:
             _sync(device) #isolates work between stages like accelerator.synchronize does in ultralytics profile
             t0 = time.perf_counter()
