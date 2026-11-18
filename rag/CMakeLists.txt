@@ -72,6 +72,10 @@ if(BUILD_TESTING)
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_SOURCE_DIR}/tests/test_ttnn_bench.py)
     add_test(
+      NAME tt_metal_reduction_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_SOURCE_DIR}/tests/test_tt_metal_model.py)
+    add_test(
       NAME telemetry_tools
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_SOURCE_DIR}/tests/test_telemetry.py)

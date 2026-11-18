@@ -91,6 +91,7 @@ def main() -> None:
             "--iters", "2",
             "--threshold", "0.7",
         ])
+        assert not arguments.tracy_signposts
         output = io.StringIO()
         adapter.run(arguments, output, FakeSearcher)
         rows = list(csv.DictReader(io.StringIO(output.getvalue())))

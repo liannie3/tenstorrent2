@@ -110,6 +110,25 @@ def apply_match(record: dict[str, object], match: Match) -> None:
     })
 
 
+def apply_timings(record: dict[str, object], result: SearchResult) -> None:
+    timing = result.timings
+    for field in (
+        "cpu_normalization_us", "buffer_preparation_us", "device_total_us",
+        "h2d_bytes", "d2h_bytes", "persistent_device_bytes",
+        "peak_device_bytes", "workspace_bytes",
+    ):
+        value = getattr(timing, field, None)
+        if value is not None:
+            record[field] = value
+    record["device_memory_available"] = int(all(
+        getattr(timing, field, None) is not None for field in (
+            "persistent_device_bytes", "peak_device_bytes", "workspace_bytes"
+        )
+    ))
+    # device_total_us is a synchronized host observation, not a Tensix timer.
+    record["device_timing_available"] = 0
+
+
 def execute_submission(
     searcher: TtnnReferenceSearcher,
     payloads: PayloadReader,
@@ -163,7 +182,15 @@ def run(
         raise ValueError("query count must be divisible by batch size")
 
     backend_start = time.perf_counter_ns()
-    searcher = searcher_factory(arguments.bank, arguments.device)
+    if arguments.packed_bank is None and not arguments.tracy_signposts:
+        searcher = searcher_factory(arguments.bank, arguments.device)
+    else:
+        searcher = searcher_factory(
+            arguments.bank, arguments.device,
+            packed_bank_path=arguments.packed_bank,
+            max_batch=max(1, arguments.batch),
+            tracy_signposts=arguments.tracy_signposts,
+        )
     backend_finish = time.perf_counter_ns()
     writer = csv.DictWriter(output, fieldnames=RAW_FIELDS, lineterminator="\n")
     writer.writeheader()
@@ -190,6 +217,7 @@ def run(
             "payload_bytes": first_sizes[0],
         })
         apply_match(cold, first_result.matches[0])
+        apply_timings(cold, first_result)
         writer.writerow(cold)
         first_record = empty_record("ttnn-reference", "first_request")
         first_record.update({
@@ -200,6 +228,7 @@ def run(
             "payload_bytes": first_sizes[0],
         })
         apply_match(first_record, first_result.matches[0])
+        apply_timings(first_record, first_result)
         writer.writerow(first_record)
 
         def corpus_pass(record: bool, submission: int) -> int:
@@ -225,6 +254,7 @@ def run(
                             "payload_bytes": payload_size,
                         })
                         apply_match(row, match)
+                        apply_timings(row, result)
                         writer.writerow(row)
                     submission += 1
             return submission
@@ -261,6 +291,14 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--iters", type=int, default=100)
     parser.add_argument("--threshold", type=float, default=0.7)
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument(
+        "--packed-bank", type=Path,
+        help="validated RAGTTB01 bank produced by pack_tt_bank.py",
+    )
+    parser.add_argument(
+        "--tracy-signposts", action="store_true",
+        help="emit optional Tenstorrent Tracy signposts (diagnostic runs only)",
+    )
     arguments = parser.parse_args(argv)
     if arguments.backend != "ttnn-reference":
         parser.error("backend must be ttnn-reference")
@@ -270,6 +308,8 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("batch and iters must be positive; warmup must be non-negative")
     if arguments.device < 0:
         parser.error("device must be non-negative")
+    if arguments.packed_bank is not None and not arguments.packed_bank.is_file():
+        parser.error("packed bank does not exist")
     if not math.isfinite(arguments.threshold) or not -1.0 <= arguments.threshold <= 1.0:
         parser.error("threshold must be finite and in [-1, 1]")
     if not arguments.expected.is_file():

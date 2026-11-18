@@ -152,6 +152,12 @@ latency. Bank upload and program compilation are reported as startup metrics.
 
 ## 5. Milestone 1: TT-NN reference backend
 
+Implementation status: the v0.80 adapter enables the TT-NN program cache, keeps the
+bank and a maximum-batch host workspace resident, accepts the deterministic RAGTTB01
+packed artifact, validates its manifest payload hash, and reports transfer/workspace
+accounting through the common CSV schema. Its `device_total_us` remains a synchronized
+host observation; profiler-derived stage fields intentionally remain unavailable.
+
 Implement the simplest correct device path supported by the pinned TT-NN release:
 
 ```text
@@ -223,7 +229,17 @@ signposts around bank upload, request, H2D, compute, reduction, D2H, and result
 construction. Deduplicate device timing once per batch submission just as the CUDA
 aggregation does.
 
+The TT-NN adapter now provides optional `--tracy-signposts` bracketing request,
+normalization, preparation, H2D submission, matmul submission, blocking D2H wait, and
+host reduction. Running it with `python -m tracy -p` also exposes stable Python helper
+functions as host zones. No intermediate device synchronization is introduced.
+
 ## 7. Milestone 3: fused TT-Metalium retrieval
+
+Implementation status: `tools/tt_metal_model.py` and its adversarial host tests now
+freeze the runtime partitioning and deterministic reduction contract. The actual
+Metalium reader/compute/writer programs and p150a launcher remain device work: they
+must not be reported as complete until built and validated against the pinned stack.
 
 The optimized backend must eliminate the full score transfer and should eliminate the
 score tensor in GDDR entirely.

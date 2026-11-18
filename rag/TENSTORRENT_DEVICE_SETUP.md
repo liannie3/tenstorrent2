@@ -213,18 +213,39 @@ Use stable regions such as:
 
 ```text
 rag/request
-rag/query_prepare
+rag/normalize
+rag/prepare
 rag/h2d
-rag/dot_product
-rag/local_top1
-rag/global_reduction
-rag/d2h
-rag/result_construct
+rag/matmul
+rag/d2h_wait
+rag/host_reduction
 ```
 
-Exact profiler commands depend on the installed TT-Metal build and are finalized after
-the host inventory. Profiling runs are diagnostic and must remain separate from release
-latency results.
+The TT-NN adapter exposes these as stable Python functions and optional begin/end
+signposts. Capture a short, warmed diagnostic run from the activated TT-Metal Python
+environment:
+
+```bash
+mkdir -p results/profiles/tenstorrent
+python -m tracy -p -r -v tools/ttnn_bench.py \
+  bench_data/sweep/entries-3400/bank.bin \
+  bench_data/sweep/entries-3400/queries.f32 \
+  bench_data/sweep/entries-3400/expected.json \
+  --backend ttnn-reference --precision bf16 \
+  --batch 32 --warmup 10 --iters 5 \
+  --tracy-signposts \
+  > results/profiles/tenstorrent/ttnn-reference-bf16-b32.csv
+```
+
+`_normalize_stage`, `_prepare_stage`, `_upload_stage`, `_matmul_stage`,
+`_download_stage`, and `_reduction_stage` appear as host zones when `-p` is enabled.
+The begin/end signposts correlate logical requests with TT-NN operation reports. They
+do not synchronize the device. The blocking download remains the only natural request
+synchronization point, so the `matmul` host zone may contain enqueue time while
+`d2h_wait` may absorb queued device execution.
+
+Profiling runs are diagnostic and must remain separate from release latency results.
+Do not pass `--tracy-signposts` to retained release runs.
 
 Tracy may optionally instrument host code on NVIDIA too, but it is not the shared device
 profiler: use Tracy/device-profiler tools for Tenstorrent and NVTX/Nsight for NVIDIA.
