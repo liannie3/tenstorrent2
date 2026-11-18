@@ -157,6 +157,9 @@ bank and a maximum-batch host workspace resident, accepts the deterministic RAGT
 packed artifact, validates its manifest payload hash, and reports transfer/workspace
 accounting through the common CSV schema. Its `device_total_us` remains a synchronized
 host observation; profiler-derived stage fields intentionally remain unavailable.
+The Blackhole reference matmul uses HiFi4 with approximation disabled and FP32
+destination accumulation; the initial p150a smoke corpus produced matching IDs and
+gate decisions with maximum score error `3.48e-5`.
 
 Implement the simplest correct device path supported by the pinned TT-NN release:
 

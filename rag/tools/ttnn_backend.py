@@ -96,6 +96,23 @@ def enable_program_cache(ttnn_module, device) -> None:
     raise RuntimeError("installed TT-NN does not expose program-cache control")
 
 
+def high_fidelity_matmul_config(ttnn_module, device):
+    """Create the Blackhole-validated BF16/FP32-accumulation configuration."""
+    initializer = getattr(ttnn_module, "init_device_compute_kernel_config", None)
+    math_fidelity = getattr(ttnn_module, "MathFidelity", None)
+    if not callable(initializer) or math_fidelity is None:
+        raise RuntimeError(
+            "installed TT-NN does not expose compute-kernel configuration"
+        )
+    return initializer(
+        device.arch(),
+        math_fidelity=math_fidelity.HiFi4,
+        math_approx_mode=False,
+        fp32_dest_acc_en=True,
+        packer_l1_acc=False,
+    )
+
+
 def round_up(value: int, multiple: int = 32) -> int:
     if value <= 0 or multiple <= 0:
         raise ValueError("value and multiple must be positive")
@@ -259,6 +276,7 @@ class TtnnReferenceSearcher:
         self._closed = False
         self.device = ttnn.open_device(device_id=device_id)
         enable_program_cache(ttnn, self.device)
+        self.compute_kernel_config = high_fidelity_matmul_config(ttnn, self.device)
 
         # Keep a transposed [1, 1, K, N] BF16 bank resident in device DRAM.
         bank = torch.zeros(
@@ -332,7 +350,11 @@ class TtnnReferenceSearcher:
         )
 
     def _matmul_stage(self, device_queries):
-        return self._ttnn.matmul(device_queries, self.device_bank)
+        return self._ttnn.matmul(
+            device_queries,
+            self.device_bank,
+            compute_kernel_config=self.compute_kernel_config,
+        )
 
     def _download_stage(self, device_scores):
         # This blocking download is the request's natural synchronization point.

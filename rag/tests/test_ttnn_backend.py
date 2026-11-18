@@ -50,6 +50,32 @@ def main() -> None:
 
     backend.enable_program_cache(SimpleNamespace(), DeviceApi())
     assert cache_calls[-1] == "device-api"
+
+    config_arguments = {}
+
+    class ConfigDevice:
+        def arch(self):
+            return "blackhole"
+
+    def initialize_config(architecture, **kwargs):
+        config_arguments.update(architecture=architecture, **kwargs)
+        return "high-fidelity-config"
+
+    config = backend.high_fidelity_matmul_config(
+        SimpleNamespace(
+            init_device_compute_kernel_config=initialize_config,
+            MathFidelity=SimpleNamespace(HiFi4="HiFi4"),
+        ),
+        ConfigDevice(),
+    )
+    assert config == "high-fidelity-config"
+    assert config_arguments == {
+        "architecture": "blackhole",
+        "math_fidelity": "HiFi4",
+        "math_approx_mode": False,
+        "fp32_dest_acc_en": True,
+        "packer_l1_acc": False,
+    }
     try:
         backend.require_supported_version("0.81.0")
         raise AssertionError("version mismatch was accepted")
