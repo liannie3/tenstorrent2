@@ -22,7 +22,7 @@ model:
 
 # ---------------- Run ----------------
 run:
-  views: [6]                                # one sub-test per view count (1 = front only, 6 = whole rig)
+  views: [1, 6]                                # one sub-test per view count (1 = front only, 6 = whole rig)
   max_frames: null                          # null = run all frames; N = stop after N iterations (per sub-test)
   seed: 0
   warmup_iters: 20

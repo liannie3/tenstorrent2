@@ -98,6 +98,8 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                 images_seen += 1
 
+            ## Frame sync inside the iter range, so 'iter' covers the GPU work too
+            torch.cuda.synchronize()
             pop()                                     # Iter: NVTX Pop
 
     ## Ranges are host-side, so this is what makes 'subtest' enclose the GPU

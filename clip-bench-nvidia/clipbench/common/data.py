@@ -6,6 +6,7 @@
 # REVISION:        1.0
 # ======================================= #
 
+import torch
 from PIL import Image
 from pathlib import Path
 
@@ -52,6 +53,12 @@ def load_images(paths):
 ## Preprocess stage: resize -> center crop -> normalize -> NCHW tensor on device.
 ## nuScenes frames are 1600x900, so the shortest-edge resize gives 597x336 and the
 ## 336x336 center crop keeps only the middle ~56% of the horizontal field of view.
+##
+## On CUDA the upload is pinned + non_blocking. A pageable .to('cuda') waits for
+## the stream to drain, which would sync every view.
 def preprocess(processor, images, device, dtype):
     batch = processor(images=images, return_tensors='pt')
-    return batch['pixel_values'].to(device=device, dtype=dtype)
+    pixel_values = batch['pixel_values']
+    if torch.device(device).type == 'cuda':
+        return pixel_values.pin_memory().to(device=device, dtype=dtype, non_blocking=True)
+    return pixel_values.to(device=device, dtype=dtype)

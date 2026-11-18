@@ -88,6 +88,9 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                     images_seen += 1
 
+                ## Frame sync: wait for all views' GPU work to finish
+                torch.cuda.synchronize()
+
         ## Drains the queue so the last kernels land inside the sampled window
         torch.cuda.synchronize()
     finally:

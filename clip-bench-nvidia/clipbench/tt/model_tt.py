@@ -79,15 +79,15 @@ def load_encoder(config):
 
 
 class TTMLPProjector:
-    def __init__(self, state_dict):
-        self.fc1_weight = state_dict['fc1.weight']
-        self.fc1_bias = state_dict['fc1.bias']
-        self.fc2_weight = state_dict['fc2.weight']
-        self.fc2_bias = state_dict['fc2.bias']
+    def __init__(self, state_dict):                   # Stores 4 Tensors (Weight and Bias for each of the 2 linear layers)
+        self.fc1_weight = state_dict['fc1.weight']    # [2048, 1024] Maps each 1024-number CLIP vector to 2048 numbers
+        self.fc1_bias = state_dict['fc1.bias']        # [2048] A constant added to each of the 2048 outputs
+        self.fc2_weight = state_dict['fc2.weight']    # [2048, 2048] Mixes the 2048 numbers into the final 2048-number embedding
+        self.fc2_bias = state_dict['fc2.bias']        # Constant added to final outputs
 
     def forward(self, image_features):
         x = ttnn.linear(image_features, self.fc1_weight, bias=self.fc1_bias, transpose_b=True)
-        x = ttnn.gelu(x, fast_and_approximate_mode=False)    # exact erf GELU, same as nn.GELU()
+        x = ttnn.gelu(x, fast_and_approximate_mode=False)                                        # exact GELU, same as nn.GELU()
         return ttnn.linear(x, self.fc2_weight, bias=self.fc2_bias, transpose_b=True)
 
     __call__ = forward

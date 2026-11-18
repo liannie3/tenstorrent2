@@ -8,7 +8,7 @@
 
 ## Iteration = frame i from each view (FRONT, FRONT_LEFT, FRONT_RIGHT, etc)
 ## Within each iteration, one view runs at a time with no synchronization. This will allow us to see how the
-## CPU and the GPU are working alongside one another
+## CPU and the GPU are working alongside one another. One synchronize after the last view of each frame.
 
 import time
 import torch
@@ -74,13 +74,14 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                 images_seen += 1
 
-            ## view -1 means all views: the whole rig for frame i. Host time, so
-            ## it ends when the last view was queued, not when it finished.
+            ## Frame sync: wait for all views' GPU work to finish
+            torch.cuda.synchronize()
+
+            ## view -1 means all views: the whole rig for frame i, GPU work included
             iter_ms = (time.perf_counter_ns() - iter_start) / 1e6
             timings.append((views, 'iter', i, -1, iter_ms))
 
-    ## Drains the queue so 'subtest' covers the GPU tail too, and so this
-    ## sub-test's trailing kernels stay out of the next one's numbers.
+    ## Already drained by the last frame sync; kept so 'subtest' always covers the GPU tail
     torch.cuda.synchronize()
     subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6               # Time for the entire subtest
 

@@ -199,11 +199,9 @@ def main(argv=None):
     return 0
 
 
-## Footnote on preprocess: data.preprocess ends in a .to(device) on a pageable
-## tensor, and CUDA synchronizes the stream before a pageable H2D copy. So the
-## preprocess number includes waiting for the previous iteration's encode to
-## finish. Switching that copy to pinned memory with non_blocking=True would
-## remove the wait and give a cleaner split -- but then preprocess becomes
-## asynchronous too and needs its own event pair, like encode and project.
+## Footnote on preprocess: data.preprocess uploads from pinned memory with
+## non_blocking=True, so views no longer sync on the H2D copy. The host-side
+## preprocess number is pure CPU work now. The copy itself runs on the stream
+## between views and isn't inside any event pair -- it shows up in 'iter' only.
 if __name__ == '__main__':
     raise SystemExit(main())
