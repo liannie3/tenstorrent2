@@ -57,6 +57,33 @@ def parse_backend(spec: str) -> tuple[str, str]:
     return name, precision
 
 
+def extract_benchmark_csv(
+    output: str, backend: str
+) -> tuple[str, list[dict[str, str]], str]:
+    """Separate the strict CSV stream from vendor logs written to stdout."""
+    expected_header = ",".join(RAW_FIELDS)
+    csv_lines = [expected_header]
+    diagnostic_lines: list[str] = []
+    header_seen = False
+    for line in output.splitlines():
+        if not header_seen:
+            if line == expected_header:
+                header_seen = True
+            else:
+                diagnostic_lines.append(line)
+            continue
+        parsed = next(csv.reader([line]))
+        if len(parsed) == len(RAW_FIELDS) and parsed[0] == backend:
+            csv_lines.append(line)
+        else:
+            diagnostic_lines.append(line)
+    if not header_seen:
+        return "", [], "\n".join(diagnostic_lines)
+    csv_text = "\n".join(csv_lines) + "\n"
+    records = list(csv.DictReader(io.StringIO(csv_text)))
+    return csv_text, records, "\n".join(diagnostic_lines)
+
+
 def run_benchmark(
     executable: Path,
     bank: Path,
@@ -105,10 +132,17 @@ def run_benchmark(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    csv_text, records, stdout_diagnostics = extract_benchmark_csv(
+        completed.stdout, backend
+    )
     if raw_output is not None:
         raw_output.parent.mkdir(parents=True, exist_ok=True)
-        raw_output.write_text(completed.stdout, encoding="utf-8", newline="\n")
-    records = list(csv.DictReader(io.StringIO(completed.stdout)))
+        raw_output.write_text(csv_text, encoding="utf-8", newline="\n")
+        diagnostics = "\n".join(filter(None, [stdout_diagnostics, completed.stderr]))
+        if diagnostics:
+            raw_output.with_suffix(raw_output.suffix + ".log").write_text(
+                diagnostics + "\n", encoding="utf-8", newline="\n"
+            )
     if not records or list(records[0]) != RAW_FIELDS:
         raise RuntimeError(
             f"{backend} produced an unexpected rag_bench schema: "

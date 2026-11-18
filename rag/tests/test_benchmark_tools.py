@@ -17,9 +17,25 @@ def main():
     tools = rag_root / "tools"
     sys.path.insert(0, str(tools))
     from bench_harness import hardware_row
+    from benchmark_common import RAW_FIELDS, extract_benchmark_csv
     from run_bank_sweep import DEFAULT_SIZES
 
     assert DEFAULT_SIZES == "10,100,3400,10000"
+
+    header = ",".join(RAW_FIELDS)
+    values = {field: "" for field in RAW_FIELDS}
+    values.update({"backend": "ttnn-reference", "mode": "measured"})
+    row_buffer = __import__("io").StringIO()
+    writer = csv.DictWriter(row_buffer, fieldnames=RAW_FIELDS, lineterminator="\n")
+    writer.writerow(values)
+    clean, parsed, diagnostics = extract_benchmark_csv(
+        "TT runtime startup log\n" + header + "\n" + row_buffer.getvalue()
+        + "TT runtime shutdown log\n",
+        "ttnn-reference",
+    )
+    assert clean.startswith(header + "\n")
+    assert len(parsed) == 1 and parsed[0]["mode"] == "measured"
+    assert diagnostics == "TT runtime startup log\nTT runtime shutdown log"
 
     synthetic = []
     for trial, device_us in (("1", "20"), ("2", "22")):
