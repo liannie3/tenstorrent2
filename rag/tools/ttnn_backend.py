@@ -83,6 +83,19 @@ def installed_ttnn_version(ttnn_module) -> str:
         ) from exc
 
 
+def enable_program_cache(ttnn_module, device) -> None:
+    """Enable caching across the two public v0.80 Python API variants."""
+    module_function = getattr(ttnn_module, "enable_program_cache", None)
+    if callable(module_function):
+        module_function(device)
+        return
+    device_method = getattr(device, "enable_program_cache", None)
+    if callable(device_method):
+        device_method()
+        return
+    raise RuntimeError("installed TT-NN does not expose program-cache control")
+
+
 def round_up(value: int, multiple: int = 32) -> int:
     if value <= 0 or multiple <= 0:
         raise ValueError("value and multiple must be positive")
@@ -245,7 +258,7 @@ class TtnnReferenceSearcher:
         self.max_batch = max_batch
         self._closed = False
         self.device = ttnn.open_device(device_id=device_id)
-        ttnn.enable_program_cache(self.device)
+        enable_program_cache(ttnn, self.device)
 
         # Keep a transposed [1, 1, K, N] BF16 bank resident in device DRAM.
         bank = torch.zeros(

@@ -36,6 +36,20 @@ def main() -> None:
     ) == "0.80.3"
     with patch.object(backend.importlib.metadata, "version", return_value="0.80.0"):
         assert backend.installed_ttnn_version(SimpleNamespace()) == "0.80.0"
+
+    cache_calls = []
+    backend.enable_program_cache(
+        SimpleNamespace(enable_program_cache=lambda device: cache_calls.append(device)),
+        "module-api-device",
+    )
+    assert cache_calls == ["module-api-device"]
+
+    class DeviceApi:
+        def enable_program_cache(self):
+            cache_calls.append("device-api")
+
+    backend.enable_program_cache(SimpleNamespace(), DeviceApi())
+    assert cache_calls[-1] == "device-api"
     try:
         backend.require_supported_version("0.81.0")
         raise AssertionError("version mismatch was accepted")
