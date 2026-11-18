@@ -9,6 +9,8 @@ import sys
 import tempfile
 import hashlib
 import json
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -29,6 +31,11 @@ def main() -> None:
     assert backend.parse_major_minor("v0.80.0") == (0, 80)
     assert backend.parse_major_minor("0.80.0+wheel") == (0, 80)
     backend.require_supported_version("0.80.3")
+    assert backend.installed_ttnn_version(
+        SimpleNamespace(__version__="0.80.3")
+    ) == "0.80.3"
+    with patch.object(backend.importlib.metadata, "version", return_value="0.80.0"):
+        assert backend.installed_ttnn_version(SimpleNamespace()) == "0.80.0"
     try:
         backend.require_supported_version("0.81.0")
         raise AssertionError("version mismatch was accepted")

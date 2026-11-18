@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import hashlib
+import importlib.metadata
 import struct
 import time
 from dataclasses import dataclass
@@ -67,6 +68,19 @@ def require_supported_version(version: str) -> None:
             f"TT-NN {version} is unsupported by this provisional adapter; "
             f"expected {expected}.x"
         )
+
+
+def installed_ttnn_version(ttnn_module) -> str:
+    """Return the TT-NN version for wheels that omit ``ttnn.__version__``."""
+    module_version = getattr(ttnn_module, "__version__", None)
+    if module_version:
+        return str(module_version)
+    try:
+        return importlib.metadata.version("ttnn")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise RuntimeError(
+            "cannot determine TT-NN version from the module or package metadata"
+        ) from exc
 
 
 def round_up(value: int, multiple: int = 32) -> int:
@@ -201,7 +215,7 @@ class TtnnReferenceSearcher:
                 "packages on a Tenstorrent host"
             ) from exc
 
-        require_supported_version(ttnn.__version__)
+        require_supported_version(installed_ttnn_version(ttnn))
         self._torch = torch
         self._ttnn = ttnn
         self._tracy_signpost = None
