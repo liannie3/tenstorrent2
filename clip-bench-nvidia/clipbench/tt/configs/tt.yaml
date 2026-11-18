@@ -16,6 +16,7 @@ run:
   l1_small_size: 8192            # L1 reserved for conv2d (same as tt_clip/device.py)
   trace_region_size: 67108864    # 64 MiB of DRAM for the Metal traces gpu_pure_latency replays
   trace: true                    # false = time gpu_pure_latency eagerly (host dispatch included)
+  tracy_tools_folder: /mnt/data/tt/tracy_tools   # prebuilt capture/csvexport tools; null = tracy's default
 
 output:
   results_dir: analysis/results/tt        # directory for result data

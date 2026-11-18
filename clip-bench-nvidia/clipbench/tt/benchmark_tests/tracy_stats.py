@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import torch
@@ -143,7 +144,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
 ## Relaunch tt/run.py under tracy so the signposts and device ops get collected.
 ## child_args is what main() wants forwarded, e.g. ['--profile', 'tt'].
-## Returns the ops_perf_results CSV, or None if none was written.
+## Returns the ops_perf_results CSV, or None if tracy failed or wrote none.
 def capture_under_tracy(config, child_args):
     capture = Path(config['output']['results_dir']) / 'tracy_capture'
     capture.mkdir(parents=True, exist_ok=True)
@@ -151,17 +152,27 @@ def capture_under_tracy(config, child_args):
     ## python -m tracy <flags> -m <module> <args>
     cmd = [sys.executable, '-m', 'tracy',
            '-r',                                     # generate the ops report after the run
+           '-p',                                     # only profile enabled zones, less overhead
            '-v',                                     # verbose
-           '-o', str(capture),                       # report folder
-           '-m', 'clipbench.tt.run', *child_args]
+           '-o', str(capture)]                       # report folder
+
+    ## Pip/conda ttnn has no capture/csvexport tools, so point at a prebuilt copy
+    tools = config['run'].get('tracy_tools_folder')
+    if tools:
+        cmd += ['--tracy-tools-folder', tools]
+
+    cmd += ['-m', 'clipbench.tt.run', *child_args]
 
     env = dict(os.environ)
     env[TRACY_ENV_GUARD] = '1'                       # stops the child relaunching too
+    env.setdefault('TT_LOGGER_LEVEL', 'error')       # hide tt-metal info spam
 
     print('capturing signposts under tracy\n')
     result = subprocess.run(cmd, cwd=cfg.PROJECT_ROOT, env=env)
     if result.returncode != 0:
-        raise SystemExit(f'python -m tracy exited {result.returncode}')
+        warnings.warn(f'python -m tracy exited {result.returncode}, so tracy_stats has no '
+                      'results (e2e_latency is unaffected)', RuntimeWarning, stacklevel=2)
+        return None
 
     reports = sorted(capture.glob('**/ops_perf_results*.csv'), key=lambda p: p.stat().st_mtime)
     return reports[-1] if reports else None
