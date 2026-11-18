@@ -117,11 +117,17 @@ def main(argv=None):
     results_dir = Path(config['output']['results_dir'])
 
     ## 4. Model pieces. The card must be open first -- weights go straight to it.
+    print('\nopening device...', flush=True)
     model_lib.open_device(config)
     try:
+        print('loading model + copying weights to the card...', flush=True)
         processor = model_lib.load_processor(config)
         encoder = model_lib.load_encoder(config)
         projector = model_lib.load_projector(config, encoder.vision_width)     # 1024 for ViT-L
+        print('model loaded', flush=True)
+
+        ## Kernel times don't depend on warmup past the first compile, so the tracy pass keeps it short
+        warmup_iters = run.get('tracy_warmup_iters', 2) if under_tracy else run.get('warmup_iters', 0)
 
         ## 5. One test at a time, one sub-test per view count
         for test_name, run_subtest in tests.items():
@@ -137,8 +143,8 @@ def main(argv=None):
                 views_paths = data.load_views(config, views)
                 print(f'\n=== sub-test: {data.num_frames(views_paths)} frames x '
                       f'{views} views ===')
-                warmup_loop(config, encoder, processor, projector, views_paths,
-                            run.get('warmup_iters', 0))
+                print(f'  warmup      : {warmup_iters} iters...', flush=True)
+                warmup_loop(config, encoder, processor, projector, views_paths, warmup_iters)
                 images_seen = run_subtest(
                     config, encoder, processor, projector, views_paths, views, timings)
                 images_by_views[views] = images_seen

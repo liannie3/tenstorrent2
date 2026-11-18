@@ -77,7 +77,9 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
     ## Loads parameters which are initialized in the tt.yaml file
     dtype = model_lib.resolve_dtype(config['run']['precision'])    # ttnn.bfloat16
-    max_frames = config['run'].get('max_frames')                   # Caps the iterations
+    max_frames = config['run'].get('tracy_max_frames')             # Profiling is slow, so tt.yaml caps it separately
+    if max_frames is None:
+        max_frames = config['run'].get('max_frames')
     images_seen = 0                                                # Image counter
 
     num_frames = data.num_frames(views_paths)                      # Iterations available, set by the shortest view
@@ -86,6 +88,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
     ## Flush the warmup's ops so they don't take up buffer space
     read_profiler()
+    print(f'  profiling   : {num_frames} frames', flush=True)
 
     mark('subtest', views, 0, -1, 'start')                         # Subtest: Signpost Start
 
@@ -129,6 +132,9 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
             ## One frame of ViT-L is thousands of ops, so the buffers are read every frame.
             ## Outside every stage range, and device kernel times don't see host waits.
             read_profiler()
+
+            if (i + 1) % 5 == 0 or i + 1 == num_frames:
+                print(f'  frame       : {i + 1}/{num_frames}', flush=True)
 
     mark('subtest', views, 0, -1, 'end')                           # Subtest: Signpost End
     read_profiler()

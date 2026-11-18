@@ -68,6 +68,9 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
             iter_ms = (time.perf_counter_ns() - iter_start) / 1e6   # Iter: Perf_Counter End
             timings.append((views, 'iter', i, -1, iter_ms))
 
+            if (i + 1) % 32 == 0 or i + 1 == num_frames:
+                print(f'  frame       : {i + 1}/{num_frames}', flush=True)
+
     ## Already drained by the last frame sync; kept so 'subtest' always covers the device tail
     ttnn.synchronize_device(get_device())
     subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6     # Subtest: Perf_Counter End
