@@ -59,7 +59,7 @@ def _git_sha():
 
 
 ## Written beside the CSVs so a result traces back to the code that made it
-def write_manifest(config, images_by_views, path, tracy_profiled=False):
+def write_manifest(config, images_by_views, path):
     manifest = {
         'profile': config['profile'],
         'platform': config['run']['target'],
@@ -74,7 +74,6 @@ def write_manifest(config, images_by_views, path, tracy_profiled=False):
         'images_by_views': images_by_views,
         'git_sha': _git_sha(),
         'run_time': datetime.now().isoformat(timespec='seconds'),
-        'tracy_profiled': tracy_profiled,      # device profiler on, so not the wall-clock numbers to quote
         'ttnn': getattr(ttnn, '__version__', 'unknown'),
         'torch': torch.__version__,
         'transformers': transformers.__version__,

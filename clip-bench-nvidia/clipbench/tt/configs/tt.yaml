@@ -9,17 +9,15 @@
 ## YAML file for Tenstorrent Blackhole p150a
 
 run:
-  target: tenstorrent            # run with clipbench/tt/run.py
-  device: tt                     # informational only -- the card is picked by device_id
-  device_id: 0                   # which card ttnn.open_device opens
-  precision: bf16                # tt_clip/weights.py casts every weight to bfloat16
-  l1_small_size: 8192            # L1 reserved for conv2d (same as tt_clip/device.py)
-  trace_region_size: 67108864    # 64 MiB of DRAM for the Metal traces gpu_pure_latency replays
-  trace: true                    # false = time gpu_pure_latency eagerly (host dispatch included)
-  hw_interval_ms: 100            # hardware_perf sample period (same as tegrastats on the Orin)
-  tracy_max_frames: 10           # frames per sub-test in the tracy pass only (null = same as max_frames)
-  tracy_warmup_iters: 2          # warmup in the tracy pass only; just needs the kernels compiled
-  tracy_tools_folder: /media/jrs_ml_team/4ac85820-9a28-455b-b9f5-8e7cb9b0d593/tt/tracy_tools   # prebuilt tracy-capture/tracy-csvexport; null = tracy's default
+  target: tenstorrent                     # run with clipbench/tt/run.py
+  device: tt                              # informational only -- the card is picked by device_id
+  device_id: 0                            # which card ttnn.open_device opens
+  precision: bf16                         # tt_clip/weights.py casts every weight to bfloat16
+  xla: true                               # True: model compiled using XLA, False: ported model from tt_clip
+  l1_small_size: 8192                     # L1 reserved for conv2d (same as tt_clip/device.py)
+  trace_region_size: 67108864             # 64 MiB of DRAM for the Metal traces gpu_pure_latency replays
+  trace: true                             # false = time gpu_pure_latency eagerly (host dispatch included)
+  hw_interval_ms: 100                     # hardware_perf sample period (same as tegrastats on the Orin)
 
 output:
   results_dir: analysis/results/tt        # directory for result data

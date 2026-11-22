@@ -8,7 +8,7 @@
 
 ## Iteration = frame i from each view (FRONT, FRONT_LEFT, FRONT_RIGHT, etc)
 ## Same loop as the other tests, timed with perf_counter per frame and per sub-test.
-## No tracy, no per-stage timing. Views run back to back, one synchronize per frame.
+## No per-stage timing. Views run back to back, one synchronize per frame.
 
 import time
 
