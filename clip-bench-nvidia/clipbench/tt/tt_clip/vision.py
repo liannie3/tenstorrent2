@@ -2,6 +2,8 @@ import ttnn
 from .device import get_device
 from .attention import Transformer
 
+from types import SimpleNamespace
+
 
 class VisionTransformer:
     def __init__(self, state_dict, num_vision_layers):
@@ -34,15 +36,15 @@ class VisionTransformer:
         self.ln_pre_weights = state_dict["pre_layrnorm.weight"]
         self.ln_pre_bias = state_dict["pre_layrnorm.bias"]
 
-        # Layer normalization applied after transformer layers (to class token)    UPDATE: NO LONGER USED
-        #self.ln_post_weights = state_dict["post_layernorm.weight"]
-        #self.ln_post_bias = state_dict["vision_model.post_layernorm.bias"]
+        # Layer normalization applied after transformer layers (to class token) 
+        self.ln_post_weights = state_dict["post_layernorm.weight"]
+        self.ln_post_bias = state_dict["post_layernorm.bias"]
 
         self.transformer = Transformer(
             state_dict, num_layers=num_vision_layers, num_heads=self.vision_heads, attention_mask=None, prefix="encoder"
         )
 
-    def forward(self, x):
+    def forward(self, x, output_hidden_states=False):
         (batch_size, in_channels, height, width) = x.shape
 
         # === Important: TT-NN conv2d differs from PyTorch in tensor layout ===
@@ -148,9 +150,25 @@ class VisionTransformer:
         # Step 9: Pre-transformer layer normalization
         x = ttnn.layer_norm(x, weight=self.ln_pre_weights, bias=self.ln_pre_bias)
 
+        ## UPDATED: No longer used to keep 1:1 with NVIDIA
         # Step 10: Transformer encoder layers, kept in [batch, seq, hidden] (batch-first).
         # Do not permute to sequence-first: (seq, 1, hidden) wastes ~97% of each tile.
-        x = self.transformer.forward(x)
+        # x = self.transformer.forward(x)
 
+        ## UPDATED: For 1:1 with NVIDIA
+        # Step 10: Transformer encoder layers, kept in [batch, seq, hidden] (batch-first).
+        # Do not permute to sequence-first: (seq, 1, hidden) wastes ~97% of each tile.
+        if not output_hidden_states:
+            return self.transformer.forward(x)
 
-        return x
+        x, hidden_states = self.transformer.forward(x, output_hidden_states=True)
+
+        # Step 11: post_layernorm on the CLS token -> pooler_output, same as HF.
+        # Nothing reads it; it's computed so the work matches the NVIDIA model 1:1.
+        batch, seq, hidden = x.shape
+        cls = ttnn.slice(x, [0, 0, 0], [batch, 1, hidden])
+        pooled = ttnn.layer_norm(cls, weight=self.ln_post_weights, bias=self.ln_post_bias)
+
+        # Same fields as HF's output, so select_image_features reads it the same way
+        return SimpleNamespace(last_hidden_state=x, pooler_output=pooled,
+                               hidden_states=hidden_states)

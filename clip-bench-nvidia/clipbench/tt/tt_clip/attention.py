@@ -143,9 +143,16 @@ class Transformer:
         ]
 
 
-    def forward(self, x):
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
-            x = layer.forward(x)
+    def forward(self, x, output_hidden_states=False):
+        ## UPDATED
+        ## Same order as HF: the input (after pre_layrnorm), then after each layer
+        hidden_states = [x] if output_hidden_states else None
 
+        for layer in self.layers:
+            x = layer.forward(x)
+            if output_hidden_states:
+                hidden_states.append(x)
+
+        if output_hidden_states:
+            return x, hidden_states
         return x
