@@ -14,6 +14,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -21,7 +22,6 @@
 
 namespace {
 
-using tt::bfloat16;
 using namespace tt::constants;
 using namespace tt::tt_metal;
 
@@ -48,6 +48,13 @@ std::vector<float> load_query(const std::string& path) {
 std::uint32_t round_up(
     const std::uint32_t value, const std::uint32_t alignment) {
   return ((value + alignment - 1U) / alignment) * alignment;
+}
+
+std::uint32_t runtime_address(const DeviceAddr address) {
+  if (address > std::numeric_limits<std::uint32_t>::max()) {
+    throw std::overflow_error("device address does not fit a kernel runtime argument");
+  }
+  return static_cast<std::uint32_t>(address);
 }
 
 std::vector<float> run_scores(
@@ -110,9 +117,9 @@ std::vector<float> run_scores(
       mesh_device.get());
 
   constexpr tt::DataFormat format = tt::DataFormat::Float16_b;
-  constexpr std::uint32_t query_cb = CBIndex::c_0;
-  constexpr std::uint32_t bank_cb = CBIndex::c_1;
-  constexpr std::uint32_t scores_cb = CBIndex::c_16;
+  constexpr std::uint32_t query_cb = tt::CBIndex::c_0;
+  constexpr std::uint32_t bank_cb = tt::CBIndex::c_1;
+  constexpr std::uint32_t scores_cb = tt::CBIndex::c_16;
   CreateCircularBuffer(
       program,
       core,
@@ -164,9 +171,13 @@ std::vector<float> run_scores(
       program,
       reader,
       core,
-      {query_buffer->address(), bank_buffer->address(), mt, kt, nt});
+      {runtime_address(query_buffer->address()),
+       runtime_address(bank_buffer->address()), mt, kt, nt});
   SetRuntimeArgs(
-      program, writer, core, {output_buffer->address(), mt, nt});
+      program,
+      writer,
+      core,
+      {runtime_address(output_buffer->address()), mt, nt});
 
   distributed::EnqueueWriteMeshBuffer(queue, query_buffer, query_matrix, false);
   distributed::EnqueueWriteMeshBuffer(queue, bank_buffer, bank_matrix, false);
