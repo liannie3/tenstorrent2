@@ -17,6 +17,10 @@ DEFAULT_SIZES = "10,100,3400,10000"
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rag-bench", type=Path, required=True)
+    parser.add_argument(
+        "--ttnn-bench", type=Path,
+        help="rag_bench-compatible TT-NN Python adapter",
+    )
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--results-root", type=Path, required=True)
     parser.add_argument("--sizes", default=DEFAULT_SIZES)
@@ -26,6 +30,8 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=100)
     parser.add_argument("--telemetry-provider", default="none")
+    parser.add_argument("--telemetry-device", type=int, default=0)
+    parser.add_argument("--telemetry-interval-ms", type=int, default=500)
     parser.add_argument("--telemetry-power-rail", default="unspecified")
     parser.add_argument("--power-mode", default="unspecified")
     parser.add_argument("--clock-policy", default="unspecified")
@@ -63,11 +69,15 @@ def main() -> int:
             "--iters", str(args.iters),
             "--results", str(output),
             "--telemetry-provider", args.telemetry_provider,
+            "--telemetry-device", str(args.telemetry_device),
+            "--telemetry-interval-ms", str(args.telemetry_interval_ms),
             "--telemetry-power-rail", args.telemetry_power_rail,
             "--power-mode", args.power_mode,
             "--clock-policy", args.clock_policy,
             "--cpu-governor", args.cpu_governor,
         ]
+        if args.ttnn_bench is not None:
+            command.extend(["--ttnn-bench", str(args.ttnn_bench)])
         subprocess.run(command, check=True)
     return 0
 

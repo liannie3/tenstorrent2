@@ -286,6 +286,23 @@ results/tenstorrent-device-timing
 results/profiles/tenstorrent
 ```
 
+After the 3,400-entry retained baseline passes, run the complete scaling campaign with:
+
+```bash
+python tools/run_bank_sweep.py \
+  --rag-bench build-cpu/rag_bench \
+  --ttnn-bench tools/ttnn_bench.py \
+  --data-root bench_data/sweep \
+  --results-root results/tenstorrent-scaling \
+  --sizes 10,100,3400,10000 \
+  --backends ttnn-reference:bf16 \
+  --batches 1,2,4,8,16,32,64,128 \
+  --trials 10 --warmup 10 --iters 100 \
+  --telemetry-provider tenstorrent \
+  --telemetry-device 0 --telemetry-interval-ms 500 \
+  --skip-generation
+```
+
 Use the same portable bank hash, queries, threshold, batches, warmup policy, and
 host-visible timing boundaries as the NVIDIA campaign. Release `steady_clock` results are
 authoritative; profiler durations are diagnostic.
