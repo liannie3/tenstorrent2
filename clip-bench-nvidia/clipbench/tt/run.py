@@ -20,7 +20,11 @@ output.results_dir/benchmark_<M-D-YY> (analysis/results/tt/benchmark_11-17-26/..
   hardware_perf hw_monitor over the same sweep. No stage timings; the loop is there
                 to load the card while temperature, power and voltage are sampled.
 
-hardware_perf only runs when asked for with --test.
+  tracy_stage   host perf_counter stages + device signposts, one batch per frame,
+                double-buffered. Needs run.xla false; launch under tracy:
+                python -m tracy -r -p -o analysis/results/tt/tracy -m clipbench.tt.run --test tracy_stage
+
+hardware_perf and tracy_stage only run when asked for with --test.
 """
 
 import argparse
@@ -35,7 +39,7 @@ from . import model_tt as model_lib
 from .benchmark_tests import e2e_latency, hardware_perf
 from .schema import write_manifest, write_stage_csvs
 
-TEST_NAMES = ('e2e_latency', 'hardware_perf')
+TEST_NAMES = ('e2e_latency', 'hardware_perf', 'tracy_stage')
 DEFAULT_TESTS = ['e2e_latency']     # hardware_perf runs on its own via --test
 
 
@@ -88,6 +92,9 @@ def main(argv=None):
     ## 2. Every test, hardcoded. --test picks which ones run.
     tests = {'e2e_latency': e2e_latency.run,
              'hardware_perf': hardware_perf.run}
+    if 'tracy_stage' in selected:                         # needs ttnn + tracy, so imported only when asked for
+        from .benchmark_tests import tracy_stage
+        tests['tracy_stage'] = tracy_stage.run
 
     print(f"profile: {config['profile']}  device_id: {run['device_id']}  "
           f"precision: {run['precision']}  xla: {run.get('xla', False)}")
