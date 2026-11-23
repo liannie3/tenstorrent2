@@ -13,16 +13,21 @@ instead of returning every hidden state, and pixels need an explicit upload.
 """
 import os
 import torch
-import ttnn
 from transformers import CLIPVisionModel
 
 ## Processor and projector init are platform-neutral -- reusing them guarantees
 ## identical preprocessing and identical projector weights for the same seed
 from ..nvidia.model_nvidia import MLPProjector, load_processor  # noqa: F401  (load_processor re-exported)
 
-from .tt_clip import device as tt_device
-from .tt_clip.vision import VisionTransformer
-from .tt_clip.weights import convert_model_to_ttnn
+## ttnn may not be installed in the TT-XLA venv. torch_xla is imported in open_device,
+## after TT_RUNTIME_TRACE_REGION_SIZE is set.
+try:
+    import ttnn
+    from .tt_clip import device as tt_device
+    from .tt_clip.vision import VisionTransformer
+    from .tt_clip.weights import convert_model_to_ttnn
+except ImportError:
+    ttnn = None
 
 ## Initialization of XLA
 # XLA originally set as False but will be updated depending on what is set in tt.yaml
@@ -92,31 +97,48 @@ def open_device(config):
 # Finishes any queued work and frees everything allocated on the card (weights, activations, traces)
 # Releases the card
 def close_device():
-    tt_device.close_ttnn()
+    if XLA:
+        synchronize()
+    else:
+        tt_device.close_ttnn()
+
+## Block until all queued device work is done
+def synchronize():
+    if XLA:
+        import torch_xla
+        import torch_xla.core.xla_model as xm
+
+        torch_xla.sync()                         # flush the pending graph (torch-xla is lazy)
+        xm.wait_device_ops()
+    else:
+        ttnn.synchronize_device(tt_device.get_device())
 
 
-## The ttnn equivalent of the .to(device) at the end of data.preprocess.
+## The .to(device) at the end of data.preprocess.
 ## Call data.preprocess with device='cpu', dtype=torch.float32, then this.
 def to_device(pixel_values, dtype):
+    if XLA:
+        return pixel_values.to(dtype).to(xla_device)
     return ttnn.from_torch(pixel_values, dtype=dtype, layout=ttnn.TILE_LAYOUT,
                            device=tt_device.get_device())
 
 
-## CLIP encoder, frozen. Runs all 24 layers and returns every hidden state, like NVIDIA.
-## select_image_features picks hidden_states[layer_index] afterwards.
+## CLIP encoder, frozen. Runs all 24 layers; call it with output_hidden_states=True
+## and select_image_features picks hidden_states[layer_index], same as NVIDIA.
 def load_encoder(config):
     resolve_dtype(config['run']['precision'])     # fail early if precision isn't bf16
-
-    ## HF model on the CPU, only used as the source of the weights
     hf_model = CLIPVisionModel.from_pretrained(config['model']['name']).eval()
-    num_layers = hf_model.config.num_hidden_layers                      # 24 for ViT-L
 
-    encoder = VisionTransformer(convert_model_to_ttnn(hf_model.state_dict()), num_vision_layers=num_layers)
+    if XLA:
+        ## Stock HF model, the same one NVIDIA runs, compiled for the card
+        hf_model = hf_model.to(torch.bfloat16).requires_grad_(False)
+        hf_model.vision_width = hf_model.config.hidden_size          # 1024, read by run.py
+        hf_model.compile(backend='tt')                               # compiles on the first call
+        return hf_model.to(xla_device)
 
-    ## Run with output_hidden_states=True, same as NVIDIA's model returning every hidden state
-    forward = encoder.forward
-    encoder.forward = lambda x: forward(x, output_hidden_states=True)
-    return encoder
+    ## HF model only used as the source of the weights
+    num_layers = hf_model.config.num_hidden_layers                   # 24 for ViT-L
+    return VisionTransformer(convert_model_to_ttnn(hf_model.state_dict()), num_vision_layers=num_layers)
 
 
 class TTMLPProjector:
@@ -134,18 +156,25 @@ class TTMLPProjector:
     __call__ = forward
 
 
-## Built in torch with the same seed as NVIDIA, then converted
+## Built in torch with the same seed as NVIDIA
 def load_projector(config, in_dim):
-    run = config['run']
-    torch.manual_seed(run['seed'])
+    torch.manual_seed(config['run']['seed'])
     projector = MLPProjector(in_dim, config['model']['projector_out_dim'])
+
+    if XLA:
+        projector = projector.to(torch.bfloat16).eval().requires_grad_(False)
+        projector.compile(backend='tt')
+        return projector.to(xla_device)
+
     return TTMLPProjector(convert_model_to_ttnn(projector.state_dict()))
 
 
-## Layer choice already happened in load_encoder
 def select_image_features(outputs, config):
     features = outputs.hidden_states[config['model']['layer_index']]
     if not config['model']['keep_cls']:
-        batch, seq, hidden = features.shape
-        features = ttnn.slice(features, [0, 1, 0], [batch, seq, hidden])
+        if XLA:
+            features = features[:, 1:, :]
+        else:
+            batch, seq, hidden = features.shape
+            features = ttnn.slice(features, [0, 1, 0], [batch, seq, hidden])
     return features

@@ -12,3 +12,4 @@ tt/tt_clip/xla/
 # Nsight Systems captures and their sqlite exports
 *.nsys-rep
 *.sqlite
+notebooks/

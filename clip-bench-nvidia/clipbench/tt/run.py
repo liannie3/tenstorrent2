@@ -28,7 +28,6 @@ from datetime import date
 from pathlib import Path
 
 import torch
-import ttnn
 
 from ..common import config as cfg
 from ..common import data
@@ -55,11 +54,11 @@ def warmup_loop(config, encoder, processor, projector, views_paths, iterations):
                 warm_images = data.load_images([warm_path])
                 warm_pixel_values = data.preprocess(processor, warm_images, 'cpu', torch.float32)
                 warm_pixel_values = model_lib.to_device(warm_pixel_values, dtype)
-                warm_outputs = encoder.forward(warm_pixel_values)
+                warm_outputs = encoder(warm_pixel_values, output_hidden_states=True)
                 warm_features = model_lib.select_image_features(warm_outputs, config)
                 projector(warm_features)
 
-    ttnn.synchronize_device(model_lib.tt_device.get_device())
+    model_lib.synchronize()
 
 
 def main(argv=None):
@@ -91,7 +90,7 @@ def main(argv=None):
              'hardware_perf': hardware_perf.run}
 
     print(f"profile: {config['profile']}  device_id: {run['device_id']}  "
-          f"precision: {run['precision']}")
+          f"precision: {run['precision']}  xla: {run.get('xla', False)}")
 
     ## 3. One image list per camera. Loaded at the full view count just to fail
     ## early on a bad data.path, before the card is opened.

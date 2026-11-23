@@ -13,18 +13,16 @@
 import time
 
 import torch
-import ttnn
 
 from ...common import data
 from .. import model_tt as model_lib
-from ..tt_clip.device import get_device
 
 
 ## One sub-test: every frame, at a single view count.
 def run(config, encoder, processor, projector, views_paths, views, timings):
 
     ## Loads parameters which are initialized in the tt.yaml file
-    dtype = model_lib.resolve_dtype(config['run']['precision'])    # ttnn.bfloat16
+    dtype = model_lib.resolve_dtype(config['run']['precision'])    # ttnn.bfloat16, or torch.bfloat16 under XLA
     max_frames = config['run'].get('max_frames')                   # Caps the iterations
     images_seen = 0                                                # Image counter
 
@@ -33,7 +31,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
         num_frames = min(num_frames, max_frames)
 
     ## Start from an empty queue so warmup work isn't counted
-    ttnn.synchronize_device(get_device())
+    model_lib.synchronize()
 
     subtest_start = time.perf_counter_ns()                         # Subtest: Perf_Counter Start
 
@@ -53,7 +51,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
                 pixel_values = model_lib.to_device(pixel_values, dtype)
 
                 ## Encode [TT]
-                outputs = encoder.forward(pixel_values)
+                outputs = encoder(pixel_values, output_hidden_states=True)
                 features = model_lib.select_image_features(outputs, config)
 
                 ## Project [TT]
@@ -62,7 +60,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
                 images_seen += 1
 
             ## Frame sync: wait for all views' device work to finish
-            ttnn.synchronize_device(get_device())
+            model_lib.synchronize()
 
             ## view -1 means all views: the whole rig for frame i, device work included
             iter_ms = (time.perf_counter_ns() - iter_start) / 1e6   # Iter: Perf_Counter End
@@ -72,7 +70,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
                 print(f'  frame       : {i + 1}/{num_frames}', flush=True)
 
     ## Already drained by the last frame sync; kept so 'subtest' always covers the device tail
-    ttnn.synchronize_device(get_device())
+    model_lib.synchronize()
     subtest_ms = (time.perf_counter_ns() - subtest_start) / 1e6     # Subtest: Perf_Counter End
 
     timings.append((views, 'subtest', 0, -1, subtest_ms))

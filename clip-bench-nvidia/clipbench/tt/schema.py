@@ -19,7 +19,12 @@ from pathlib import Path
 
 import torch
 import transformers
-import ttnn
+
+## ttnn may not be installed in the TT-XLA venv
+try:
+    import ttnn
+except ImportError:
+    ttnn = None
 
 ## view is the camera index within an iteration, or -1 for a row that spans the
 ## whole rig ('iter' and 'subtest')
@@ -65,6 +70,7 @@ def write_manifest(config, images_by_views, path):
         'platform': config['run']['target'],
         'device_id': config['run']['device_id'],
         'precision': config['run']['precision'],
+        'xla': config['run'].get('xla', False),
         'model': config['model']['name'],
         'image_processor': config['model'].get('image_processor'),
         'layer_index': config['model']['layer_index'],

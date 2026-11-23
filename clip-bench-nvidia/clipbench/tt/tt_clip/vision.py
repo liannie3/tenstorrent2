@@ -172,3 +172,6 @@ class VisionTransformer:
         # Same fields as HF's output, so select_image_features reads it the same way
         return SimpleNamespace(last_hidden_state=x, pooler_output=pooled,
                                hidden_states=hidden_states)
+
+    ## Lets run.py and the tests call encoder(...) the same way for the ported and XLA models
+    __call__ = forward
