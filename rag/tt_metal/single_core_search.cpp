@@ -31,14 +31,16 @@ std::vector<float> load_query(const std::string& path) {
     throw std::runtime_error("unable to open query: " + path);
   }
   const auto bytes = input.tellg();
-  if (bytes != static_cast<std::streamoff>(rag::kTextDim * sizeof(float))) {
-    throw std::runtime_error("query must contain exactly 2048 float32 values");
+  constexpr std::streamoff query_bytes = rag::kTextDim * sizeof(float);
+  if (bytes < query_bytes || bytes % query_bytes != 0) {
+    throw std::runtime_error(
+        "query corpus must contain complete 2048-float queries");
   }
   input.seekg(0);
   std::vector<float> query(rag::kTextDim);
   input.read(
       reinterpret_cast<char*>(query.data()),
-      static_cast<std::streamsize>(bytes));
+      static_cast<std::streamsize>(query_bytes));
   if (!input) {
     throw std::runtime_error("failed to read query");
   }
