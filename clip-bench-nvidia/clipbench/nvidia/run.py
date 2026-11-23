@@ -88,8 +88,8 @@ def main(argv=None):
     ## Make sure the run is on an nvidia device
     if run['target'] != 'nvidia':
         raise SystemExit(
-            f"profile {args.profile!r} has run.target {run['target']!r} - run it with:\n"
-            f'  python -m clipbench.common.run_cpu --profile {args.profile}'
+            f"profile {args.profile!r} has run.target {run['target']!r} - "
+            'this runner only takes nvidia profiles'
         )
 
     ## Checks if CUDA is available
@@ -97,8 +97,8 @@ def main(argv=None):
         raise SystemExit(
             'clipbench.nvidia.run times the GPU stages with CUDA events and needs a working '
             'CUDA device, but torch.cuda.is_available() is False.\n'
-            'For a CPU-only run use:\n'
-            '  python -m clipbench.common.run_cpu --profile cpu'
+            'The CPU is only used for the golden file:\n'
+            '  python -m clipbench.common.golden'
         )
 
     ## 2. Every test, hardcoded. Which ones this process runs is decided in the

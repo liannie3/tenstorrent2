@@ -9,9 +9,9 @@
 ## YAML File for CPU Development and Testing
 
 run:
-  target: cpu                   # run with clipbench/common/run_cpu.py -- perf_counter stage timing
+  target: cpu                   # only used by clipbench/common/golden.py
   device: cpu                 
   precision: fp32               # data type
    
 output:   
-  results_dir: analysis/results/cpu      # directory for result data
+  results_dir: analysis/results/cpu      # unused, but config.py expects every profile to have one

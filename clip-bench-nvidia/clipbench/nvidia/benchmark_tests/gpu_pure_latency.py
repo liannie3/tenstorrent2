@@ -59,7 +59,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                 ## Decode + preprocess [CPU, untimed here]
                 images = data.load_images([path])                                  # Return: Returns a list of the path and pixel data of images
-                pixel_values = data.preprocess(processor, images, device, dtype)   # Return: Explained more in run_cpu.py
+                pixel_values = data.preprocess(processor, images, device, dtype)   # Return: Explained more in common/data.py
 
                 ## Encode [GPU]
                 encode_events[i][view][0].record()                                # Encode: Record starting time to cudaEvent

@@ -32,6 +32,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
     subtest_start = time.perf_counter_ns()
 
+    ## inference_mode wraps the whole sub-test because nothing here ever trains
     with torch.inference_mode():
         for i, frame_paths in enumerate(data.iter_frames(views_paths)):
             if i >= num_frames:
@@ -45,13 +46,16 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
             for view, path in enumerate(frame_paths):
 
                 ## Decode [CPU]
-                t0 = time.perf_counter_ns()               # Decode: Perf_Counter
-                images = data.load_images([path])         # Return: Returns a list of the path and pixel data of images
+                t0 = time.perf_counter_ns()                                       # Decode: Perf_Counter
+                images = data.load_images([path])                                 # Return: Returns a list of the path and pixel data of images
 
-                ## Preprocessing [CPU]
-                t1 = time.perf_counter_ns()                                       # Decode & Preprocessing: Perf_counter
-                pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
-                t2 = time.perf_counter_ns()                                       # Preprocessing & Encode: Perf_Counter
+                ## Preprocessing [CPU]                                            # Time Marker: End Load Images, Start Preprocessing                             (900, 1600, 3) uint8              
+                t1 = time.perf_counter_ns()                                       # Return: Resize: Converts 1600x900px res image to 597x336px                    (336, 597, 3) uint8               
+                pixel_values = data.preprocess(processor, images, device, dtype)  #         Center: Crops to 336x336px                                            (336, 336, 3) uint8               
+                t2 = time.perf_counter_ns()                                       #         Rescale: Converts uint8 integers to floats [0, 255] --> [0.0, 1.0]    (336, 336, 3) float32             
+                                                                                  #         Normalize: Each R,G,B gets a different mean and STD                   (336, 336, 3) float32             
+                                                                                  #         Stack: Stacks the images in the NCHW tensor                           (1, 3, 336, 336) float32          
+                                                                                  #         To: Moves to device and casts precision (fp32 cpu / fp16 jetson)      (1, 3, 336, 336) float32 / float16
 
                 ## Encode [CPU launch cost]
                 outputs = encoder(pixel_values, output_hidden_states=True)

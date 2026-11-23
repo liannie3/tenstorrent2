@@ -8,7 +8,7 @@
 
 """Files written by nvidia/run.py: one CSV per stage, plus a manifest.
 
-Same columns as schema_cpu.py, plus an nvtx_ms column merged in from an nsys
+Stage CSV columns, plus an nvtx_ms column merged in from an nsys
 capture and the Jetson power mode in the manifest.
 """
 

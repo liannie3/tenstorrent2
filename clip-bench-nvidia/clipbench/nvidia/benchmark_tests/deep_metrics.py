@@ -80,7 +80,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                 ## Preprocessing [CPU]
                 push('preprocess', views, view)                                   # Preprocessing: NVTX Push
-                pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in run_cpu.py
+                pixel_values = data.preprocess(processor, images, device, dtype)  # Return: Explained more in common/data.py
                 pop()                                                             # Preprocessing: NVTX Pop
 
                 ## Encode [GPU]

@@ -13,3 +13,6 @@ tt/tt_clip/xla/
 *.nsys-rep
 *.sqlite
 notebooks/
+
+# Golden parity files (~5 GB)
+golden/
