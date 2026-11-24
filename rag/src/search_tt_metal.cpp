@@ -14,7 +14,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -26,28 +25,6 @@ namespace {
 
 using namespace tt::constants;
 using namespace tt::tt_metal;
-
-std::vector<float> load_query(const std::string& path) {
-  std::ifstream input(path, std::ios::binary | std::ios::ate);
-  if (!input) {
-    throw std::runtime_error("unable to open query: " + path);
-  }
-  const auto bytes = input.tellg();
-  constexpr std::streamoff query_bytes = rag::kTextDim * sizeof(float);
-  if (bytes < query_bytes || bytes % query_bytes != 0) {
-    throw std::runtime_error(
-        "query corpus must contain complete 2048-float queries");
-  }
-  input.seekg(0);
-  std::vector<float> query(rag::kTextDim);
-  input.read(
-      reinterpret_cast<char*>(query.data()),
-      static_cast<std::streamsize>(query_bytes));
-  if (!input) {
-    throw std::runtime_error("failed to read query");
-  }
-  return query;
-}
 
 std::uint32_t round_up(
     const std::uint32_t value, const std::uint32_t alignment) {
@@ -292,41 +269,69 @@ rag::tt_metal::CompactResult run_device_search(
 
 }  // namespace
 
-int main(int argc, char** argv) {
-  if (argc < 3 || argc > 4) {
-    std::cerr << "Usage: rag_tt_metal_smoke BANK QUERY [THRESHOLD]\n";
-    return 2;
-  }
-  try {
-    const float threshold = argc == 4 ? std::stof(argv[3]) : 0.7F;
-    if (!std::isfinite(threshold)) {
-      throw std::invalid_argument("threshold must be finite");
-    }
-    const rag::Bank bank(argv[1]);
-    const std::vector<float> query = load_query(argv[2]);
-    const std::vector<float> normalized = rag::normalize_query(query);
-    const rag::Match expected = rag::search_cpu(bank, query, threshold);
+namespace rag {
 
-    auto device = distributed::MeshDevice::create_unit_mesh(0);
+struct TtMetalSearcher::Impl {
+  const Bank& bank;
+  float threshold;
+  std::shared_ptr<distributed::MeshDevice> device;
+
+  Impl(const Bank& source_bank, const float configured_threshold)
+      : bank(source_bank),
+        threshold(configured_threshold),
+        device(distributed::MeshDevice::create_unit_mesh(0)) {
+    if (!std::isfinite(threshold) || threshold < -1.0F || threshold > 1.0F) {
+      throw std::invalid_argument("threshold must be finite and in [-1, 1]");
+    }
+  }
+
+  ~Impl() {
+    if (device) {
+      device->close();
+    }
+  }
+
+  Match execute(const std::vector<float>& query) {
+    const auto normalized = normalize_query(query);
     const auto compact =
         run_device_search(bank, normalized, threshold, device);
-    const rag::Match actual = rag::tt_metal::decode_result(
-        compact, bank.size());
-    const bool closed = device->close();
-
-    std::cout << "expected: accepted=" << expected.accepted
-              << " id=" << expected.id << " score=" << expected.score << '\n';
-    std::cout << "metalium: accepted=" << actual.accepted
-              << " id=" << actual.id << " score=" << actual.score << '\n';
-    if (!closed || actual.id != expected.id ||
-        actual.accepted != expected.accepted) {
-      std::cerr << "multicore TT-Metal RAG scoring smoke: FAIL\n";
-      return 1;
-    }
-    std::cout << "multicore TT-Metal RAG scoring smoke: PASS\n";
-    return 0;
-  } catch (const std::exception& error) {
-    std::cerr << "rag_tt_metal_smoke: " << error.what() << '\n';
-    return 1;
+    return tt_metal::decode_result(compact, bank.size());
   }
+};
+
+TtMetalSearcher::TtMetalSearcher(const Bank& bank, const float threshold)
+    : impl_(std::make_unique<Impl>(bank, threshold)) {}
+
+TtMetalSearcher::~TtMetalSearcher() = default;
+
+Match TtMetalSearcher::search(const std::vector<float>& query) {
+  return impl_->execute(query);
 }
+
+TimedSearchResult TtMetalSearcher::search_batch_timed(
+    const std::vector<float>& queries,
+    const std::size_t query_count,
+    const float threshold) {
+  if (query_count == 0 || queries.size() != query_count * kTextDim) {
+    throw std::invalid_argument("TT-Metal query batch has an invalid shape");
+  }
+  if (threshold != impl_->threshold) {
+    throw std::invalid_argument(
+        "TT-Metal threshold must match the value configured at initialization");
+  }
+
+  TimedSearchResult result;
+  result.matches.reserve(query_count);
+  for (std::size_t query = 0; query < query_count; ++query) {
+    const auto begin = queries.begin() + query * kTextDim;
+    result.matches.push_back(impl_->execute(
+        std::vector<float>(begin, begin + kTextDim)));
+  }
+  result.timing.h2d_bytes =
+      query_count * tt::constants::TILE_HEIGHT * kTextDim *
+      sizeof(tt::tt_metal::bfloat16);
+  result.timing.d2h_bytes = query_count * 32U;
+  return result;
+}
+
+}  // namespace rag

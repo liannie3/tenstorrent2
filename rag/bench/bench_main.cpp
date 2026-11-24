@@ -22,7 +22,7 @@ using Clock = std::chrono::steady_clock;
 
 constexpr const char* kUsage =
     "Usage: rag_bench BANK QUERIES EXPECTED "
-    "[--backend cpu|cuda-reference|cuda-optimized] "
+    "[--backend cpu|cuda-reference|cuda-optimized|tt-metal-optimized] "
     "[--precision fp32|bf16] [--batch N] [--warmup N] [--iters N] "
     "[--threshold SCORE]";
 
@@ -232,6 +232,9 @@ int main(int argc, char** argv) {
     std::unique_ptr<rag::CudaSearcher> cuda_reference;
     std::unique_ptr<rag::CudaOptimizedSearcher> cuda_optimized;
 #endif
+#ifdef RAG_HAS_TT_METAL
+    std::unique_ptr<rag::TtMetalSearcher> tt_metal_optimized;
+#endif
 
     const auto backend_init_start = Clock::now();
     {
@@ -262,6 +265,22 @@ int main(int argc, char** argv) {
                                  std::size_t count,
                                  float threshold) {
         return cuda_optimized->search_batch_timed(batch, count, threshold);
+      };
+#endif
+#ifdef RAG_HAS_TT_METAL
+    } else if (options.backend == "tt-metal-optimized") {
+      if (options.precision != "bf16") {
+        throw std::invalid_argument(
+            "tt-metal-optimized supports only bf16 precision");
+      }
+      tt_metal_optimized = std::make_unique<rag::TtMetalSearcher>(
+          bank, options.benchmark.threshold);
+      search = [&tt_metal_optimized](
+                   const std::vector<float>& batch,
+                   std::size_t count,
+                   float threshold) {
+        return tt_metal_optimized->search_batch_timed(
+            batch, count, threshold);
       };
 #endif
       } else {

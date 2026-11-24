@@ -48,11 +48,14 @@ if(RAG_ENABLE_TT_METAL)
   if(NOT TARGET TT::Metalium)
     find_package(TT-Metalium REQUIRED CONFIG)
   endif()
-  add_executable(rag_tt_metal_smoke
-    tt_metal/single_core_search.cpp)
-  target_link_libraries(rag_tt_metal_smoke PRIVATE rag_core TT::Metalium)
-  target_compile_definitions(rag_tt_metal_smoke PRIVATE
+  target_sources(rag_core PRIVATE src/search_tt_metal.cpp)
+  target_link_libraries(rag_core PUBLIC TT::Metalium)
+  target_compile_definitions(rag_core
+    PUBLIC RAG_HAS_TT_METAL=1
+    PRIVATE
     RAG_TT_KERNEL_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/tt_metal/kernels")
+  add_executable(rag_tt_metal_smoke tt_metal/smoke_main.cpp)
+  target_link_libraries(rag_tt_metal_smoke PRIVATE rag_core)
 endif()
 
 # Optional CUDA backend

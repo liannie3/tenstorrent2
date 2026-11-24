@@ -118,4 +118,27 @@ class CudaOptimizedSearcher {
 };
 #endif
 
+#ifdef RAG_HAS_TT_METAL
+// Persistent optimized Tenstorrent backend. Metalium types stay behind the
+// PImpl boundary so portable consumers do not acquire SDK dependencies.
+class TtMetalSearcher {
+ public:
+  TtMetalSearcher(const Bank& bank, float threshold = 0.7f);
+  ~TtMetalSearcher();
+
+  TtMetalSearcher(const TtMetalSearcher&) = delete;
+  TtMetalSearcher& operator=(const TtMetalSearcher&) = delete;
+
+  Match search(const std::vector<float>& query);
+  TimedSearchResult search_batch_timed(
+      const std::vector<float>& queries,
+      std::size_t query_count,
+      float threshold = 0.7f);
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+#endif
+
 }  // namespace rag
