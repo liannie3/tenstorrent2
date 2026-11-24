@@ -62,6 +62,9 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
                 if i >= num_frames:
                     break
 
+                ## Hold every view's output until the frame sync (torch-xla is lazy)
+                kept = []
+
                 ## One sub-iteration per view, no synchronize between them
                 for path in frame_paths:
 
@@ -72,11 +75,13 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
                     outputs = encoder(pixel_values, output_hidden_states=True)
                     features = model_lib.select_image_features(outputs, config)
                     embeddings = projector(features)
+                    kept.append(embeddings)
 
                     images_seen += 1
 
                 ## Frame sync: wait for all views' device work to finish
                 model_lib.synchronize()
+                kept.clear()
 
         ## Drains the queue so the last ops land inside the sampled window
         model_lib.synchronize()

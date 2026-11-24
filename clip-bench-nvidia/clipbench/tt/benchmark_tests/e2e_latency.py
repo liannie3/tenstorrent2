@@ -42,6 +42,10 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
             iter_start = time.perf_counter_ns()                    # Iter: Perf_Counter Start
 
+            ## Hold every view's output until the frame sync. torch-xla is lazy, so an
+            ## overwritten output could otherwise be dropped before it ever runs.
+            kept = []
+
             ## One sub-iteration per view, back to back, no synchronize
             for path in frame_paths:
 
@@ -56,11 +60,13 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
 
                 ## Project [TT]
                 embeddings = projector(features)
+                kept.append(embeddings)
 
                 images_seen += 1
 
             ## Frame sync: wait for all views' device work to finish
             model_lib.synchronize()
+            kept.clear()
 
             ## view -1 means all views: the whole rig for frame i, device work included
             iter_ms = (time.perf_counter_ns() - iter_start) / 1e6   # Iter: Perf_Counter End
