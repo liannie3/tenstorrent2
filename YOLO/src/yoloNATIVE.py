@@ -21,7 +21,7 @@ imgs = [cv2.imread(str(p)) for p in load_image_path(IMG_DIR)] #read each image
 model = YOLO("yolov8n.pt")
 #Use settings as config.py: 640 px, conf 0.25, IoU 0.7, GPU 0, fp32 (half=True for fp16)
 #NOTE: add compilation to match updated graph based harness
-preds = [model.predict(im, imgsz = 640, conf = 0.25, iou = 0.7, device = 0, half = False, compile = True, verbose = False)[0] for im in imgs]
+preds = [model.predict(im, imgsz = 640, conf = 0.25, iou = 0.7, device = 0, compile = True, verbose = False)[0] for im in imgs]
 warmup = 5 #skip the first few calls as warmup
 print(f"{len(preds) - warmup} images, median ms per image:")
 for k in ("preprocess", "inference", "postprocess"):
