@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 import argparse #pass command line arguments to script to decide which runs to perform
-
+import torch
 from ultralytics import YOLO
 
 import config
