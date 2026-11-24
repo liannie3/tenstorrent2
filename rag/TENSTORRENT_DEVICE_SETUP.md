@@ -252,6 +252,33 @@ profiler: use Tracy/device-profiler tools for Tenstorrent and NVTX/Nsight for NV
 
 ## 10. Optimized TT-Metalium target
 
+The current development checkpoint is a multicore scoring diagnostic. It discovers
+the runtime compute/storage grid and shards contiguous output tiles across active
+cores, but it still downloads the complete score tensor for host-side comparison.
+Build it on the pinned p150a stack before starting local-winner fusion:
+
+```bash
+cd /path/to/tenstorrent2/rag
+cmake -S . -B build-tt-metal -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON \
+  -DRAG_ENABLE_TT_METAL=ON \
+  -DRAG_TT_METAL_HOME="$TT_METAL_HOME"
+cmake --build build-tt-metal --target rag_tt_metal_smoke -j
+
+# v0.80 resolves soc_descriptors relative to TT_METAL_HOME.
+RAG_ROOT="$PWD"
+cd "$TT_METAL_HOME"
+"$RAG_ROOT/build-tt-metal/rag_tt_metal_smoke" \
+  "$RAG_ROOT/bench_data/bank.bin" \
+  "$RAG_ROOT/bench_data/queries.f32" 0.7
+```
+
+Retain the printed runtime grid, active-core count, expected result, and Metalium
+result. The run passes only when the ID and gate match the CPU result. Before local
+winner fusion, also validate bank sizes `1, 31, 32, 33, 3400`; these cover a partial
+tile, exact tile boundaries, and uneven distribution over the runtime grid.
+
 The final backend will:
 
 1. Keep normalized BF16/BFP8 keys resident in p150a GDDR6.

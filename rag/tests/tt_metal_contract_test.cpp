@@ -96,10 +96,34 @@ void test_wire_contract() {
   });
 }
 
+void test_sharded_compact_result() {
+  using rag::tt_metal::compact_result_from_scores;
+  const std::vector<float> scores{0.1F, 0.8F, 0.2F, 0.8F, 0.7F};
+  for (const std::uint32_t workers : {1U, 2U, 3U, 5U, 64U}) {
+    const auto accepted = compact_result_from_scores(scores, workers, 0.8F);
+    assert(accepted.accepted == 1U);
+    assert(accepted.id == 1U);
+    assert(std::abs(accepted.score - 0.8F) < 1e-7F);
+
+    const auto rejected = compact_result_from_scores(scores, workers, 0.81F);
+    assert(rejected.accepted == 0U);
+    assert(rejected.id == 1U);
+  }
+  expect_throws<std::invalid_argument>(
+      [] { compact_result_from_scores({}, 1, 0.7F); });
+  expect_throws<std::invalid_argument>(
+      [] { compact_result_from_scores({0.5F}, 0, 0.7F); });
+  expect_throws<std::invalid_argument>([] {
+    compact_result_from_scores(
+        {std::numeric_limits<float>::quiet_NaN()}, 1, 0.7F);
+  });
+}
+
 }  // namespace
 
 int main() {
   test_partitions();
   test_reduction();
   test_wire_contract();
+  test_sharded_compact_result();
 }

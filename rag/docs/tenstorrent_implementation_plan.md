@@ -2,10 +2,30 @@
 
 ## Status and objective
 
-Status: in progress. The repository contains a provisional TT-NN v0.80 BF16
-reference backend, deterministic bank packing, a `rag_bench`-compatible command
-adapter, and host-only contract tests. Device validation and the fused
-TT-Metalium backend remain outstanding.
+Status: in progress. Phase 0 and the TT-NN v0.80 BF16 reference path are complete.
+The repository contains deterministic bank packing, a `rag_bench`-compatible
+command adapter, strict C++ wire/reduction contracts, and a portable executable
+oracle covering device normalization, sharded scoring, deterministic reduction,
+gating, and selected-feature gathering. The build has an explicit, pinned-SDK
+`RAG_ENABLE_TT_METAL` boundary. The initial single-core reader/compute/writer
+program and launcher have compiled and passed an 8-entry correctness smoke test
+on the Blackhole p150a. That prototype still materializes and downloads all scores;
+multicore local reduction, device global reduction, compact-result transfer, device
+normalization, and production benchmarking remain outstanding.
+
+### Progress snapshot (2026-11-23)
+
+| Capability | Status | Evidence / remaining condition |
+| --- | --- | --- |
+| Pinned p150a toolchain | Complete | TT-Metal v0.80.0, revision `978f93b56e36b68318d11ecf7b101085a81d718e`; upstream single-core matmul passed. |
+| TT-NN BF16 reference | Complete for reference use | Resident key bank, program cache, batch adapter, telemetry, and smoke-quality results are present. It intentionally downloads scores and reduces on the host. |
+| Portable correctness contracts | Complete | C++ and Python tests specify partitioning, finite-score validation, lower-ID tie breaking, inclusive thresholding, compact wire results, and feature gathering. |
+| Single-core TT-Metal scoring | Complete as a prototype | The 8-entry p150a smoke matched ID/gate; score was `0.996094` versus CPU `1.0`. |
+| Sharded compact-result oracle | Complete | The host contract reduces per-shard winners and emits the same 12-byte result required from the final kernels. |
+| Multicore score sharding | Implemented; awaiting p150a validation | The launcher discovers the runtime grid, partitions score tiles over active cores, and gives each reader/writer a bounded global tile range. It intentionally retains the full-score diagnostic output. |
+| Multicore TT-Metal optimized backend | Not complete | Must shard over the runtime grid, reduce locally and globally on device, and avoid a full score tensor/transfer. |
+| Fully device-resident numeric retrieval | Not complete | Query normalization and optional selected-feature gathering remain device work. |
+| Final comparison campaign | Not started | Requires correctness gates, ten release trials, timing/profile/power runs, and NVIDIA comparison reports. |
 
 The objective is to add a correct, reproducible Tenstorrent backend and then evolve it
 into a device-resident retrieval implementation. After initialization, the optimized
@@ -239,10 +259,18 @@ functions as host zones. No intermediate device synchronization is introduced.
 
 ## 7. Milestone 3: fused TT-Metalium retrieval
 
-Implementation status: `tools/tt_metal_model.py` and its adversarial host tests now
-freeze the runtime partitioning and deterministic reduction contract. The actual
-Metalium reader/compute/writer programs and p150a launcher remain device work: they
-must not be reported as complete until built and validated against the pinned stack.
+Implementation status: `tools/tt_metal_model.py` and the portable C++
+`rag/tt_metal_contract.h` freeze the runtime partitioning, deterministic reduction,
+and 12-byte device/host result contract. Their adversarial host tests cover uneven
+partitions, excess workers, ties, padding, threshold equality, non-finite values,
+wire-result validation, normalization, fused scoring, and selected-feature gathering.
+The single-core Metalium reader/compute/writer programs and launcher have been built
+and validated on the pinned p150a stack. This is only a scoring prototype: it writes
+the complete score matrix to DRAM, downloads it, and reduces it on the host. The
+portable launcher now routes those scores through the sharded local/global reduction
+and compact wire-result oracle, establishing the seam that the next device kernels
+must replace. The optimized backend must not be reported as complete until the same
+behavior executes on device and only the compact result crosses PCIe.
 
 The optimized backend must eliminate the full score transfer and should eliminate the
 score tensor in GDDR entirely.
@@ -473,18 +501,54 @@ test responsibilities should remain.
 
 ## 15. Delivery sequence
 
-1. Target-host inventory and pinned stack record.
-2. Backend CLI/build skeleton plus host-only tests.
-3. Bank packer and manifest.
-4. TT-NN BF16 reference with resident bank.
-5. Quality-gate and benchmark integration.
-6. Separate timing and Tracy profiler workflow.
-7. Single-core Metalium dot-product prototype.
-8. Multicore sharding with local winners.
-9. Deterministic global reduction and compact D2H result.
-10. Device normalization and optional visual-feature gather.
-11. NUMA/affinity experiment and final benchmark campaign.
-12. Documentation, reproducibility audit, and comparison report.
+1. [x] Target-host inventory and pinned stack record.
+2. [x] Backend CLI/build skeleton plus host-only tests.
+3. [x] Bank packer and manifest.
+4. [x] TT-NN BF16 reference with resident bank.
+5. [x] Initial quality-gate and benchmark integration.
+6. [x] Separate timing and Tracy profiler workflow.
+7. [x] Single-core Metalium dot-product prototype.
+8. [~] Multicore score sharding implemented; p150a validation and local-winner fusion remain.
+9. [ ] Deterministic global reduction, thresholding, and compact D2H result.
+10. [ ] Persistent bank/program lifecycle and batch-capable benchmark adapter.
+11. [ ] Device normalization and optional visual-feature gather.
+12. [ ] NUMA/affinity experiment and final benchmark campaign.
+13. [ ] Documentation, reproducibility audit, and comparison report.
+
+### Execution plan from the current checkpoint
+
+Each increment must preserve a passing host-only build and must be separately
+validated on the pinned p150a before the next optimization is layered on top.
+
+1. **Freeze the reduction seam.** Use the portable sharded-score oracle from the
+   single-core launcher; test worker-count invariance, exact ties, rejected winners,
+   invalid scores, and the 12-byte result. This is implemented in the current tree.
+2. **Create a multicore scoring prototype.** Discover the runtime compute/storage
+   grid, call `partition_entries`, assign contiguous entry ranges, and run one program
+   per active core. Initially permit one score shard per core in DRAM so work splitting,
+   tile offsets, and numerical behavior can be validated independently. The code is
+   implemented; compilation and correctness validation on the pinned p150a are next.
+3. **Fuse per-core local selection.** Replace each score shard with one local
+   `{score, id, valid}` candidate. Exclude padded columns explicitly. Validate each
+   local winner against the portable oracle for uneven partitions and bank sizes
+   `1, 31, 32, 33, 3400`.
+4. **Add deterministic global reduction.** Reduce candidates on device using higher
+   finite score then lower ID, apply the inclusive threshold, and write one
+   `CompactResult` per query. Confirm that D2H bytes are 12 per query and that no
+   complete score tensor exists on the normal path.
+5. **Turn the prototype into a backend.** Introduce a RAII searcher that owns the mesh
+   device, resident packed bank, compiled programs, queues, and reusable batch buffers.
+   Add a `tt-metal-optimized` command adapter with the existing benchmark CSV contract.
+6. **Move normalization to device.** Add norm reduction, reciprocal square root, and
+   normalized query distribution. Retain a temporary diagnostic mode that accepts a
+   host-normalized query for differential testing, but exclude it from release results.
+7. **Complete optional feature handoff.** If the downstream model will remain on the
+   p150a, gather the selected numeric feature tensor on device. Otherwise record this
+   explicitly as follow-up and retain host-side strings/payload lookup.
+8. **Qualify correctness and performance.** Run fixture, adversarial, randomized, and
+   production-corpus comparisons; then run release, device-timing, Tracy, power, and
+   NUMA/affinity campaigns separately. Require a measured production-corpus benefit
+   over `ttnn-reference` before calling the optimized backend complete.
 
 Each step must leave the CPU/CUDA paths buildable and tested. Do not combine the TT-NN
 reference and fused-kernel optimization into one unreviewable change.

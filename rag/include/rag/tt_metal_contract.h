@@ -40,6 +40,15 @@ Candidate reduce_candidates(
     const std::vector<Candidate>& candidates,
     float threshold);
 
+// Portable oracle for the device reduction pipeline. Scores are partitioned
+// exactly as the multicore launcher partitions bank entries, each shard emits
+// one local winner, and the global winner is encoded with the wire contract.
+// The TT-Metal kernels must produce byte-for-byte equivalent results.
+CompactResult compact_result_from_scores(
+    const std::vector<float>& scores,
+    std::uint32_t available_workers,
+    float threshold);
+
 CompactResult encode_result(const Candidate& candidate);
 Match decode_result(const CompactResult& result, std::uint32_t valid_entries);
 

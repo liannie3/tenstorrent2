@@ -1,5 +1,6 @@
 #include "rag/bank.h"
 #include "rag/search.h"
+#include "rag/tt_metal_contract.h"
 
 #include <tt-metalium/bfloat16.hpp>
 #include <tt-metalium/constants.hpp>
@@ -9,6 +10,7 @@
 #include <tt-metalium/tensor_accessor_args.hpp>
 #include <tt-metalium/tilize_utils.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -68,7 +70,7 @@ std::vector<float> run_scores(
   const std::uint32_t n = round_up(bank.size(), TILE_WIDTH);
   const std::uint32_t mt = m / TILE_HEIGHT;
   const std::uint32_t kt = k / TILE_WIDTH;
-  const std::uint32_t nt = n / TILE_WIDTH;
+  const std::uint32_t global_nt = n / TILE_WIDTH;
 
   std::vector<bfloat16> query_matrix(static_cast<std::size_t>(m) * k, 0.0F);
   for (std::uint32_t column = 0; column < k; ++column) {
@@ -94,7 +96,11 @@ std::vector<float> run_scores(
   distributed::MeshWorkload workload;
   const distributed::MeshCoordinateRange device_range(mesh_device->shape());
   Program program;
-  const CoreCoord core{0, 0};
+  const CoreCoord grid = mesh_device->compute_with_storage_grid_size();
+  const std::uint32_t available_workers = grid.x * grid.y;
+  const auto tile_ranges = rag::tt_metal::partition_entries(
+      global_nt, available_workers);
+  const auto active_cores = static_cast<std::uint32_t>(tile_ranges.size());
   const std::uint32_t tile_bytes =
       sizeof(bfloat16) * TILE_HEIGHT * TILE_WIDTH;
   const distributed::DeviceLocalBufferConfig local_config{
@@ -122,64 +128,75 @@ std::vector<float> run_scores(
   constexpr std::uint32_t query_cb = tt::CBIndex::c_0;
   constexpr std::uint32_t bank_cb = tt::CBIndex::c_1;
   constexpr std::uint32_t scores_cb = tt::CBIndex::c_16;
-  CreateCircularBuffer(
-      program,
-      core,
-      CircularBufferConfig(2 * tile_bytes, {{query_cb, format}})
-          .set_page_size(query_cb, tile_bytes));
-  CreateCircularBuffer(
-      program,
-      core,
-      CircularBufferConfig(2 * tile_bytes, {{bank_cb, format}})
-          .set_page_size(bank_cb, tile_bytes));
-  CreateCircularBuffer(
-      program,
-      core,
-      CircularBufferConfig(2 * tile_bytes, {{scores_cb, format}})
-          .set_page_size(scores_cb, tile_bytes));
-
-  std::vector<std::uint32_t> reader_compile_args;
-  TensorAccessorArgs(*query_buffer).append_to(reader_compile_args);
-  TensorAccessorArgs(*bank_buffer).append_to(reader_compile_args);
   const std::string kernel_root = RAG_TT_KERNEL_ROOT;
-  const auto reader = CreateKernel(
-      program,
-      kernel_root + "/reader_scores.cpp",
-      core,
-      DataMovementConfig{
-          .processor = DataMovementProcessor::RISCV_1,
-          .noc = NOC::RISCV_1_default,
-          .compile_args = reader_compile_args});
+  for (std::uint32_t worker = 0; worker < active_cores; ++worker) {
+    const CoreCoord core{worker % grid.x, worker / grid.x};
+    const rag::tt_metal::WorkRange tile_range = tile_ranges[worker];
+    const std::uint32_t local_nt = tile_range.end - tile_range.begin;
+    CreateCircularBuffer(
+        program,
+        core,
+        CircularBufferConfig(2 * tile_bytes, {{query_cb, format}})
+            .set_page_size(query_cb, tile_bytes));
+    CreateCircularBuffer(
+        program,
+        core,
+        CircularBufferConfig(2 * tile_bytes, {{bank_cb, format}})
+            .set_page_size(bank_cb, tile_bytes));
+    CreateCircularBuffer(
+        program,
+        core,
+        CircularBufferConfig(2 * tile_bytes, {{scores_cb, format}})
+            .set_page_size(scores_cb, tile_bytes));
 
-  std::vector<std::uint32_t> writer_compile_args;
-  TensorAccessorArgs(*output_buffer).append_to(writer_compile_args);
-  const auto writer = CreateKernel(
-      program,
-      kernel_root + "/writer_scores.cpp",
-      core,
-      DataMovementConfig{
-          .processor = DataMovementProcessor::RISCV_0,
-          .noc = NOC::RISCV_0_default,
-          .compile_args = writer_compile_args});
-  CreateKernel(
-      program,
-      kernel_root + "/compute_scores.cpp",
-      core,
-      ComputeConfig{
-          .math_fidelity = MathFidelity::HiFi4,
-          .compile_args = {mt, kt, nt}});
+    std::vector<std::uint32_t> reader_compile_args;
+    TensorAccessorArgs(*query_buffer).append_to(reader_compile_args);
+    TensorAccessorArgs(*bank_buffer).append_to(reader_compile_args);
+    const auto reader = CreateKernel(
+        program,
+        kernel_root + "/reader_scores.cpp",
+        core,
+        DataMovementConfig{
+            .processor = DataMovementProcessor::RISCV_1,
+            .noc = NOC::RISCV_1_default,
+            .compile_args = reader_compile_args});
 
-  SetRuntimeArgs(
-      program,
-      reader,
-      core,
-      {runtime_address(query_buffer->address()),
-       runtime_address(bank_buffer->address()), mt, kt, nt});
-  SetRuntimeArgs(
-      program,
-      writer,
-      core,
-      {runtime_address(output_buffer->address()), mt, nt});
+    std::vector<std::uint32_t> writer_compile_args;
+    TensorAccessorArgs(*output_buffer).append_to(writer_compile_args);
+    const auto writer = CreateKernel(
+        program,
+        kernel_root + "/writer_scores.cpp",
+        core,
+        DataMovementConfig{
+            .processor = DataMovementProcessor::RISCV_0,
+            .noc = NOC::RISCV_0_default,
+            .compile_args = writer_compile_args});
+    CreateKernel(
+        program,
+        kernel_root + "/compute_scores.cpp",
+        core,
+        ComputeConfig{
+            .math_fidelity = MathFidelity::HiFi4,
+            .compile_args = {mt, kt, local_nt}});
+
+    SetRuntimeArgs(
+        program,
+        reader,
+        core,
+        {runtime_address(query_buffer->address()),
+         runtime_address(bank_buffer->address()), mt, kt, global_nt,
+         tile_range.begin, local_nt});
+    SetRuntimeArgs(
+        program,
+        writer,
+        core,
+        {runtime_address(output_buffer->address()), mt, global_nt,
+         tile_range.begin, local_nt});
+  }
+
+  std::cout << "TT-Metal score grid: " << grid.x << 'x' << grid.y
+            << ", active cores=" << active_cores
+            << ", score tiles=" << global_nt << '\n';
 
   distributed::EnqueueWriteMeshBuffer(queue, query_buffer, query_matrix, false);
   distributed::EnqueueWriteMeshBuffer(queue, bank_buffer, bank_matrix, false);
@@ -193,22 +210,6 @@ std::vector<float> run_scores(
     scores[entry] = static_cast<float>(output[entry]);
   }
   return scores;
-}
-
-rag::Match select_match(const std::vector<float>& scores, const float threshold) {
-  if (scores.empty() || !std::isfinite(threshold)) {
-    throw std::invalid_argument("scores must be nonempty and threshold finite");
-  }
-  std::uint32_t best_id = 0;
-  for (std::uint32_t id = 0; id < scores.size(); ++id) {
-    if (!std::isfinite(scores[id])) {
-      throw std::runtime_error("device returned a non-finite score");
-    }
-    if (scores[id] > scores[best_id]) {
-      best_id = id;
-    }
-  }
-  return {scores[best_id] >= threshold, best_id, scores[best_id]};
 }
 
 }  // namespace
@@ -226,8 +227,16 @@ int main(int argc, char** argv) {
     const rag::Match expected = rag::search_cpu(bank, query, threshold);
 
     auto device = distributed::MeshDevice::create_unit_mesh(0);
+    const CoreCoord grid = device->compute_with_storage_grid_size();
+    const std::uint32_t score_tiles =
+        round_up(bank.size(), TILE_WIDTH) / TILE_WIDTH;
+    const std::uint32_t active_workers =
+        std::min(score_tiles, grid.x * grid.y);
     const std::vector<float> scores = run_scores(bank, normalized, device);
-    const rag::Match actual = select_match(scores, threshold);
+    const auto compact = rag::tt_metal::compact_result_from_scores(
+        scores, active_workers, threshold);
+    const rag::Match actual = rag::tt_metal::decode_result(
+        compact, bank.size());
     const bool closed = device->close();
 
     std::cout << "expected: accepted=" << expected.accepted
@@ -236,10 +245,10 @@ int main(int argc, char** argv) {
               << " id=" << actual.id << " score=" << actual.score << '\n';
     if (!closed || actual.id != expected.id ||
         actual.accepted != expected.accepted) {
-      std::cerr << "single-core TT-Metal RAG smoke: FAIL\n";
+      std::cerr << "multicore TT-Metal RAG scoring smoke: FAIL\n";
       return 1;
     }
-    std::cout << "single-core TT-Metal RAG smoke: PASS\n";
+    std::cout << "multicore TT-Metal RAG scoring smoke: PASS\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "rag_tt_metal_smoke: " << error.what() << '\n';

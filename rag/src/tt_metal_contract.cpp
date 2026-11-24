@@ -79,6 +79,25 @@ Candidate reduce_candidates(
   return winner;
 }
 
+CompactResult compact_result_from_scores(
+    const std::vector<float>& scores,
+    const std::uint32_t available_workers,
+    const float threshold) {
+  const auto ranges = partition_entries(
+      static_cast<std::uint32_t>(scores.size()), available_workers);
+  std::vector<Candidate> local_winners;
+  local_winners.reserve(ranges.size());
+  for (const WorkRange range : ranges) {
+    Candidate local_winner{};
+    for (std::uint32_t id = range.begin; id < range.end; ++id) {
+      local_winner = better_candidate(
+          local_winner, Candidate{scores[id], id, true});
+    }
+    local_winners.push_back(local_winner);
+  }
+  return encode_result(reduce_candidates(local_winners, threshold));
+}
+
 CompactResult encode_result(const Candidate& candidate) {
   if (!std::isfinite(candidate.score)) {
     throw std::invalid_argument("compact result score must be finite");
