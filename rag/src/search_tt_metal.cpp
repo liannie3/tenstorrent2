@@ -329,7 +329,7 @@ TimedSearchResult TtMetalSearcher::search_batch_timed(
   }
   result.timing.h2d_bytes =
       query_count * tt::constants::TILE_HEIGHT * kTextDim *
-      sizeof(tt::tt_metal::bfloat16);
+      sizeof(::bfloat16);
   result.timing.d2h_bytes = query_count * 32U;
   return result;
 }
