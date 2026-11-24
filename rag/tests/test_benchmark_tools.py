@@ -210,6 +210,7 @@ def main():
             "device": 0,
             "interval_ms": 500,
             "power_rail": "unspecified",
+            "power_boundary": "unspecified",
             "scope": "entire benchmark child process per trial",
             "energy_scope": "final measured phase; requires at least two samples",
         }

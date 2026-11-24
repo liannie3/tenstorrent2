@@ -133,7 +133,7 @@ def parse_prometheus_labels(encoded: str) -> dict[str, str]:
 
 
 def parse_tt_telemetry(
-    text: str, device: int
+    text: str, device: int, power_rail: str = "unspecified"
 ) -> dict[str, float | str | None]:
     """Parse one device from a tt-telemetry Prometheus metrics snapshot."""
     series: dict[str, list[tuple[dict[str, str], float]]] = {}
@@ -170,6 +170,17 @@ def parse_tt_telemetry(
                     return value
         return None
 
+    power_rails = {
+        name: value
+        for name, rows in series.items()
+        if name.lower().endswith(("_w", "_watts"))
+        for labels, value in rows
+        if labels.get("tray", "") == tray and labels.get("chip", "") == chip
+    }
+    selected_rails, selected_power = select_power_rails(
+        power_rails, power_rail, ("tt_tdp_w",)
+    )
+
     temperature = metric("tt_asic_temperature_celsius")
     limit = metric("tt_thermal_throttle_limit_celsius")
     throttled = None
@@ -177,7 +188,11 @@ def parse_tt_telemetry(
         throttled = "1" if temperature >= limit else "0"
     return {
         "temperature_c": temperature,
-        "power_w": metric("tt_tdp_w"),
+        "power_w": selected_power,
+        "power_rail": "+".join(selected_rails),
+        "power_rails_w": json.dumps(
+            dict(sorted(power_rails.items())), separators=(",", ":")
+        ),
         "core_clock_mhz": metric("tt_ai_clock_mhz"),
         "memory_clock_mhz": metric("tt_dram_speed_mbps"),
         "utilization_pct": metric(
@@ -187,6 +202,27 @@ def parse_tt_telemetry(
         "thermal_limit_c": limit,
         "throttled": throttled,
     }
+
+
+def select_power_rails(
+    rails: dict[str, float],
+    requested: str,
+    defaults: tuple[str, ...],
+) -> tuple[list[str], float | None]:
+    """Select one or more named rails and return their summed power."""
+
+    if requested == "unspecified":
+        selected = [name for name in defaults if name in rails][:1]
+    else:
+        selected = [name.strip() for name in requested.split(",") if name.strip()]
+    missing = [name for name in selected if name not in rails]
+    if missing:
+        available = ", ".join(sorted(rails)) or "none"
+        raise ValueError(
+            f"power rail(s) not reported: {', '.join(missing)}; "
+            f"available rails: {available}"
+        )
+    return selected, sum(rails[name] for name in selected) if selected else None
 
 
 def parse_tegrastats(
@@ -208,28 +244,17 @@ def parse_tegrastats(
             re.IGNORECASE,
         )
     }
-    requested_rail = power_rail.upper()
-    if power_rail == "unspecified":
-        # Preserve the historical GPU-rail behavior across Jetson releases.
-        selected_rail = next(
-            (name for name in ("VDD_GPU_SOC", "VDD_GPU") if name in rails),
-            None,
-        )
-    else:
-        selected_rail = requested_rail if requested_rail in rails else None
-        if selected_rail is None:
-            available = ", ".join(sorted(rails)) or "none"
-            raise ValueError(
-                f"tegrastats did not report power rail {power_rail!r}; "
-                f"available rails: {available}"
-            )
+    requested_rails = (
+        ",".join(item.strip().upper() for item in power_rail.split(","))
+        if power_rail != "unspecified" else power_rail
+    )
+    selected_rails, selected_power = select_power_rails(
+        rails, requested_rails, ("VDD_GPU_SOC", "VDD_GPU")
+    )
     return {
         "temperature_c": number(temperature_match.group(1)) if temperature_match else None,
-        "power_w": (
-            rails[selected_rail] / 1000.0
-            if selected_rail is not None and rails[selected_rail] is not None
-            else None
-        ),
+        "power_w": selected_power / 1000.0 if selected_power is not None else None,
+        "power_rail": "+".join(selected_rails),
         "power_rails_w": json.dumps(
             {
                 name: value / 1000.0
@@ -287,7 +312,7 @@ def sample_once(
         )
         with urlopen(endpoint, timeout=5) as response:
             snapshot = response.read().decode("utf-8")
-        return parse_tt_telemetry(snapshot, device)
+        return parse_tt_telemetry(snapshot, device, power_rail)
     if provider == "tenstorrent-smi":
         completed = subprocess.run(
             ["tt-smi", "-s"],

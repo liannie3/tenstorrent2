@@ -29,10 +29,16 @@ def main() -> int:
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=100)
+    parser.add_argument("--score-tolerance", type=float, default=5e-3)
     parser.add_argument("--telemetry-provider", default="none")
     parser.add_argument("--telemetry-device", type=int, default=0)
     parser.add_argument("--telemetry-interval-ms", type=int, default=500)
     parser.add_argument("--telemetry-power-rail", default="unspecified")
+    parser.add_argument(
+        "--telemetry-power-boundary",
+        choices=("accelerator", "board", "system", "unspecified"),
+        default="unspecified",
+    )
     parser.add_argument("--power-mode", default="unspecified")
     parser.add_argument("--clock-policy", default="unspecified")
     parser.add_argument("--cpu-governor", default="unspecified")
@@ -67,11 +73,13 @@ def main() -> int:
             "--trials", str(args.trials),
             "--warmup", str(args.warmup),
             "--iters", str(args.iters),
+            "--score-tolerance", str(args.score_tolerance),
             "--results", str(output),
             "--telemetry-provider", args.telemetry_provider,
             "--telemetry-device", str(args.telemetry_device),
             "--telemetry-interval-ms", str(args.telemetry_interval_ms),
             "--telemetry-power-rail", args.telemetry_power_rail,
+            "--telemetry-power-boundary", args.telemetry_power_boundary,
             "--power-mode", args.power_mode,
             "--clock-policy", args.clock_policy,
             "--cpu-governor", args.cpu_governor,

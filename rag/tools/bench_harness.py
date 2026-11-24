@@ -460,10 +460,15 @@ def main() -> int:
     parser.add_argument(
         "--telemetry-power-rail", default="unspecified",
         help=(
-            "physical power boundary reported by the telemetry provider; for "
-            "Jetson this selects the exact tegrastats rail (for example "
-            "VDD_GPU_SOC, VDD_CPU_CV, or VIN_SYS_5V0)"
+            "comma-separated non-overlapping rails to sum; use exact provider "
+            "names (for example VDD_GPU_SOC,VDD_CPU_CV on Jetson)"
         ),
+    )
+    parser.add_argument(
+        "--telemetry-power-boundary",
+        choices=("accelerator", "board", "system", "unspecified"),
+        default="unspecified",
+        help="physical boundary represented by the selected power rail or rail sum",
     )
     parser.add_argument("--power-mode", default="unspecified")
     parser.add_argument("--clock-policy", default="unspecified")
@@ -792,6 +797,7 @@ def main() -> int:
                 "device": arguments.telemetry_device,
                 "interval_ms": arguments.telemetry_interval_ms,
                 "power_rail": arguments.telemetry_power_rail,
+                "power_boundary": arguments.telemetry_power_boundary,
                 "scope": "entire benchmark child process per trial",
                 "energy_scope": "final measured phase; requires at least two samples",
             },

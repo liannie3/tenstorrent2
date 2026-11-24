@@ -49,6 +49,11 @@ def main() -> None:
     assert telemetry.parse_tegrastats(
         multi_rail, "vin_sys_5v0"
     )["power_w"] == 22.0
+    summed = telemetry.parse_tegrastats(
+        multi_rail, "VDD_GPU_SOC,VDD_CPU_CV"
+    )
+    assert summed["power_w"] == 16.5
+    assert summed["power_rail"] == "VDD_GPU_SOC+VDD_CPU_CV"
     all_rails = telemetry.parse_tegrastats(multi_rail)["power_rails_w"]
     assert all_rails == (
         '{"VDD_CPU_CV":4.5,"VDD_GPU_SOC":12.0,"VIN_SYS_5V0":22.0}'
@@ -90,6 +95,7 @@ def main() -> None:
 # HELP tt_asic_temperature_celsius ASIC temperature
 tt_asic_temperature_celsius{tray="0",chip="0"} 72.5
 tt_tdp_w{tray="0",chip="0"} 188.2
+tt_board_power_w{tray="0",chip="0"} 201.5
 tt_ai_clock_mhz{tray="0",chip="0"} 1250
 tt_dram_speed_mbps{tray="0",chip="0"} 28000
 tt_dispatch_core_efficiency_percent{tray="0",chip="0"} 84.5
@@ -100,12 +106,25 @@ tt_thermal_throttle_limit_celsius{tray="0",chip="0"} 90
     assert tt_prometheus == {
         "temperature_c": 72.5,
         "power_w": 188.2,
+        "power_rail": "tt_tdp_w",
+        "power_rails_w": '{"tt_board_power_w":201.5,"tt_tdp_w":188.2}',
         "core_clock_mhz": 1250.0,
         "memory_clock_mhz": 28000.0,
         "utilization_pct": 84.5,
         "thermal_limit_c": 90.0,
         "throttled": "0",
     }
+    tt_power_sum = telemetry.parse_tt_telemetry(
+        '''
+tt_asic_temperature_celsius{tray="0",chip="0"} 72.5
+tt_tdp_w{tray="0",chip="0"} 188.2
+tt_board_power_w{tray="0",chip="0"} 201.5
+''',
+        0,
+        "tt_tdp_w,tt_board_power_w",
+    )
+    assert tt_power_sum["power_w"] == 389.7
+    assert tt_power_sum["power_rail"] == "tt_tdp_w+tt_board_power_w"
 
     samples = []
     for trial, temperature, power in (("1", "60", "100"), ("1", "70", "120")):
