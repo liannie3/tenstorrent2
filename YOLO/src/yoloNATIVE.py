@@ -2,7 +2,7 @@ from pathlib import Path #allows for finding path of input images
 from ultralytics import YOLO
 import cv2, glob, numpy as np
 
-img_dir = Path(__file__).parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
+imgs = Path(__file__).parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
 model = YOLO("yolov8n.pt")
 #Use settings as config.py: 640 px, conf 0.25, IoU 0.7, GPU 0, fp32 (half=True for fp16)
 #NOTE: add compilation to match updated graph based harness
