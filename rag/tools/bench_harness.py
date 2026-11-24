@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import platform
 import statistics
 import struct
@@ -211,6 +212,44 @@ def bank_sizes(path: Path) -> dict[str, int]:
     }
 
 
+def print_validation_checks(
+    *,
+    input_valid: bool,
+    input_detail: str,
+    workload_valid: bool,
+    workload_detail: str,
+    quality_rows: list[dict],
+    score_tolerance: float,
+    output_valid: bool,
+    output_detail: str,
+) -> None:
+    """Print the four post-run validation checks required by the benchmark contract."""
+
+    def emit(index: int, name: str, passed: bool, detail: str) -> None:
+        status = "PASS" if passed else "FAIL"
+        print(f"[{status}] {index}/4 {name}: {detail}")
+
+    correctness_valid = bool(quality_rows) and all(
+        row["passed"] == "true" for row in quality_rows
+    )
+    correctness_detail = "; ".join(
+        (
+            f"{row['backend']}:{row['precision']} "
+            f"top1={row['top1_agreement_pct']}% "
+            f"gate={row['gate_agreement_pct']}% "
+            f"max_abs_error={float(row['max_abs_score_error']):.9g} "
+            f"<= threshold={score_tolerance:.9g}"
+        )
+        for row in quality_rows
+    ) or "no backend quality results"
+
+    print("\nBenchmark validation checks")
+    emit(1, "Input validity", input_valid, input_detail)
+    emit(2, "Workload size and parameters", workload_valid, workload_detail)
+    emit(3, "Output correctness vs CPU", correctness_valid, correctness_detail)
+    emit(4, "Output validity", output_valid, output_detail)
+
+
 def hardware_row(
     records: list[dict[str, str]],
     backend: str,
@@ -309,6 +348,50 @@ def command_output(command: list[str]) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
+def first_line(value: str) -> str:
+    return value.splitlines()[0] if value else ""
+
+
+def version_manifest(rag_root: Path) -> dict:
+    """Collect best-effort software and accelerator-stack version provenance."""
+
+    tt_metal_home_text = os.environ.get("TT_METAL_HOME", "")
+    tt_metal_home = Path(tt_metal_home_text) if tt_metal_home_text else None
+    tt_metal_revision = (
+        command_output(["git", "-C", str(tt_metal_home), "rev-parse", "HEAD"])
+        if tt_metal_home else ""
+    )
+    tt_metal_description = (
+        command_output([
+            "git", "-C", str(tt_metal_home), "describe", "--tags", "--always",
+            "--dirty",
+        ])
+        if tt_metal_home else ""
+    )
+    return {
+        "os": platform.platform(),
+        "python": platform.python_version(),
+        "rag_git_revision": command_output([
+            "git", "-C", str(rag_root), "rev-parse", "HEAD",
+        ]),
+        "rag_git_dirty": bool(command_output([
+            "git", "-C", str(rag_root), "status", "--porcelain",
+        ])),
+        "cmake": first_line(command_output(["cmake", "--version"])),
+        "cxx_compiler": first_line(command_output(["c++", "--version"])),
+        "cuda": first_line(command_output(["nvcc", "--version"])),
+        "nvidia_driver": command_output([
+            "nvidia-smi", "--query-gpu=driver_version,name,memory.total",
+            "--format=csv,noheader",
+        ]),
+        "tt_metal_home": tt_metal_home_text,
+        "tt_metal_git_revision": tt_metal_revision,
+        "tt_metal_version": tt_metal_description,
+        "tt_telemetry": first_line(command_output(["tt-telemetry", "--version"])),
+        "tt_smi": first_line(command_output(["tt-smi", "--version"])),
+    }
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -333,6 +416,15 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=100)
     parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--score-tolerance",
+        type=float,
+        default=5e-3,
+        help=(
+            "maximum absolute score error allowed by the FP32 quality gate "
+            "(default: 0.005)"
+        ),
+    )
     parser.add_argument(
         "--results",
         type=Path,
@@ -409,6 +501,8 @@ def main() -> int:
     batches = [int(item) for item in arguments.batches.split(",") if item.strip()]
     if not backend_specs or not batches or arguments.trials <= 0:
         raise SystemExit("at least one backend, batch size, and trial are required")
+    if arguments.score_tolerance < 0:
+        raise SystemExit("--score-tolerance must be non-negative")
     bytes_per_query = 2048 * 4
     query_bytes = arguments.queries.stat().st_size
     if query_bytes == 0 or query_bytes % bytes_per_query:
@@ -423,11 +517,46 @@ def main() -> int:
 
     expected_document = json.loads(arguments.expected.read_text(encoding="utf-8"))
     threshold = float(expected_document["threshold"])
+    static_sizes = bank_sizes(arguments.bank)
+    expected_results = expected_document.get("results", [])
+    expected_query_count = expected_document.get("query_count")
+    expected_text_dim = expected_document.get("text_dim", 2048)
+    input_valid = (
+        static_sizes["Bank entries"] > 0
+        and query_count > 0
+        and expected_query_count == query_count
+        and expected_text_dim == 2048
+        and isinstance(expected_results, list)
+        and len(expected_results) == query_count
+    )
+    input_detail = (
+        f"bank_entries={static_sizes['Bank entries']} "
+        f"bank_bytes={static_sizes['Bank-file bytes']} "
+        f"queries={query_count}x2048 expected_results={len(expected_results)}"
+    )
+    workload_valid = (
+        bool(backend_specs)
+        and all(batch > 0 and query_count % batch == 0 for batch in batches)
+        and arguments.trials > 0
+        and arguments.warmup >= 0
+        and arguments.iters > 0
+    )
+    intended_measured_queries = (
+        len(backend_specs) * len(batches) * arguments.trials
+        * arguments.iters * query_count
+    )
+    workload_detail = (
+        f"backends={','.join(backend_specs)} batches={','.join(map(str, batches))} "
+        f"trials={arguments.trials} warmup={arguments.warmup} "
+        f"iterations={arguments.iters} queries/run={query_count} "
+        f"intended_measured_queries={intended_measured_queries}"
+    )
 
     quality_rows = [
         evaluate_backend(
             arguments.rag_bench, arguments.bank, arguments.queries,
             arguments.expected, spec,
+            score_tolerance=arguments.score_tolerance,
             backend_executables=backend_executables,
         )
         for spec in backend_specs
@@ -441,7 +570,7 @@ def main() -> int:
     telemetry_samples = []
     cuda_timing_enabled = False
     nvtx_enabled = False
-    static_sizes = bank_sizes(arguments.bank)
+    completed_trials = 0
     for backend_spec, quality in zip(backend_specs, quality_rows):
         if quality["passed"] != "true":
             print(f"skipping {backend_spec}: quality gate failed")
@@ -475,6 +604,7 @@ def main() -> int:
                         raw_output=(arguments.results / "raw" /
                                     f"{safe_backend}-b{batch}-run{trial:02}.csv"),
                     )
+                    completed_trials += 1
                 finally:
                     if sampler is not None:
                         trial_samples = sampler.stop()
@@ -622,8 +752,14 @@ def main() -> int:
     write_csv(arguments.results / "rag_thermal_layer.csv", THERMAL_FIELDS,
               thermal_rows)
 
+    rag_root = Path(__file__).resolve().parents[1]
+    telemetry_error_count = sum(bool(sample.get("error")) for sample in telemetry_samples)
+    throttled_sample_count = sum(
+        sample.get("throttled") in {"1", "true", "True"}
+        for sample in telemetry_samples
+    )
     manifest = {
-        "schema": "rag-benchmark-manifest-v4",
+        "schema": "rag-benchmark-manifest-v5",
         "raw_schema": "rag-benchmark-raw-v2",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "host": platform.platform(),
@@ -634,6 +770,20 @@ def main() -> int:
         "measured_iterations": arguments.iters,
         "independent_trials": arguments.trials,
         "threshold": threshold,
+        "quality_gate": {
+            "required_top1_pct": 100.0,
+            "required_gate_pct": 100.0,
+            "max_abs_score_error": arguments.score_tolerance,
+        },
+        "versions": version_manifest(rag_root),
+        "hardware_metrics": {
+            "hardware_layer": hardware_rows,
+            "memory_layer": memory_rows,
+            "thermal_layer": thermal_rows,
+            "telemetry_sample_count": len(telemetry_samples),
+            "telemetry_error_count": telemetry_error_count,
+            "throttled_sample_count": throttled_sample_count,
+        },
         "instrumentation": {
             "cuda_event_timing": cuda_timing_enabled,
             "nvtx": nvtx_enabled,
@@ -648,14 +798,14 @@ def main() -> int:
         },
         "provenance": {
             "git_revision": command_output([
-                "git", "-C", str(Path(__file__).resolve().parents[1]),
+                "git", "-C", str(rag_root),
                 "rev-parse", "HEAD",
             ]),
             "git_dirty": bool(command_output([
-                "git", "-C", str(Path(__file__).resolve().parents[1]),
+                "git", "-C", str(rag_root),
                 "status", "--porcelain",
             ])),
-            "compiler": command_output([str(arguments.rag_bench), "--version"]),
+            "compiler": first_line(command_output(["c++", "--version"])),
             "cuda_version": command_output(["nvcc", "--version"]),
             "driver": command_output([
                 "nvidia-smi", "--query-gpu=driver_version,name,memory.total",
@@ -684,6 +834,39 @@ def main() -> int:
         encoding="utf-8", newline="\n",
     )
     print(f"wrote benchmark results to {arguments.results}")
+    expected_configurations = len(backend_specs) * len(batches)
+    expected_trials = expected_configurations * arguments.trials
+    application_all_rows = sum(
+        str(row["Mode"]).endswith("/all") for row in application_rows
+    )
+    telemetry_valid = (
+        arguments.telemetry_provider == "none"
+        or any(not sample.get("error") for sample in telemetry_samples)
+    )
+    output_valid = (
+        completed_trials == expected_trials
+        and application_all_rows == expected_configurations
+        and len(memory_rows) == expected_configurations
+        and len(hardware_rows) == expected_configurations
+        and telemetry_valid
+    )
+    output_detail = (
+        f"completed_trials={completed_trials}/{expected_trials} "
+        f"application_rows={application_all_rows}/{expected_configurations} "
+        f"memory_rows={len(memory_rows)}/{expected_configurations} "
+        f"hardware_rows={len(hardware_rows)}/{expected_configurations} "
+        f"telemetry_samples={len(telemetry_samples)}"
+    )
+    print_validation_checks(
+        input_valid=input_valid,
+        input_detail=input_detail,
+        workload_valid=workload_valid,
+        workload_detail=workload_detail,
+        quality_rows=quality_rows,
+        score_tolerance=arguments.score_tolerance,
+        output_valid=output_valid,
+        output_detail=output_detail,
+    )
     return 0
 
 

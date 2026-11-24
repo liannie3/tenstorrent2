@@ -121,7 +121,7 @@ def main():
             (variable_data / "expected.json").read_text(encoding="utf-8")
         )
         assert variable_expected["query_count"] == 4
-        subprocess.run(
+        benchmark_run = subprocess.run(
             [
                 sys.executable,
                 str(tools / "bench_harness.py"),
@@ -139,13 +139,29 @@ def main():
                 "2",
                 "--trials",
                 "2",
+                "--score-tolerance",
+                "0.032",
                 "--batches",
                 "1,128",
                 "--results",
                 str(results),
             ],
             check=True,
+            text=True,
+            stdout=subprocess.PIPE,
         )
+        validation_lines = [
+            line for line in benchmark_run.stdout.splitlines()
+            if line.startswith("[PASS]") or line.startswith("[FAIL]")
+        ]
+        assert len(validation_lines) == 4
+        assert validation_lines[0].startswith("[PASS] 1/4 Input validity:")
+        assert validation_lines[1].startswith(
+            "[PASS] 2/4 Workload size and parameters:"
+        )
+        assert "max_abs_error=" in validation_lines[2]
+        assert "<= threshold=0.032" in validation_lines[2]
+        assert validation_lines[3].startswith("[PASS] 4/4 Output validity:")
         with (results / "rag_quality_gate.csv").open(newline="", encoding="utf-8") as source:
             quality = list(csv.DictReader(source))
         assert quality[0]["passed"] == "true"
@@ -170,8 +186,22 @@ def main():
         manifest_path = results / "rag_run_manifest.json"
         assert manifest_path.is_file()
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["schema"] == "rag-benchmark-manifest-v4"
+        assert manifest["schema"] == "rag-benchmark-manifest-v5"
         assert manifest["raw_schema"] == "rag-benchmark-raw-v2"
+        assert manifest["quality_gate"] == {
+            "required_top1_pct": 100.0,
+            "required_gate_pct": 100.0,
+            "max_abs_score_error": 0.032,
+        }
+        assert manifest["versions"]["python"]
+        assert manifest["versions"]["rag_git_revision"]
+        hardware_metrics = manifest["hardware_metrics"]
+        assert len(hardware_metrics["hardware_layer"]) == 2
+        assert len(hardware_metrics["memory_layer"]) == 2
+        assert hardware_metrics["thermal_layer"] == []
+        assert hardware_metrics["telemetry_sample_count"] == 0
+        assert hardware_metrics["telemetry_error_count"] == 0
+        assert hardware_metrics["throttled_sample_count"] == 0
         instrumentation = manifest["instrumentation"]
         assert isinstance(instrumentation["cuda_event_timing"], bool)
         assert isinstance(instrumentation["nvtx"], bool)
