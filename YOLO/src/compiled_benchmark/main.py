@@ -4,6 +4,7 @@ import argparse #pass command line arguments to script to decide which runs to p
 
 from ultralytics import YOLO
 
+import torch
 import config
 from hardware import hardware_run_pipeline, hardware_substages, identify_monitor
 from run import run_pipeline, load_images
@@ -68,5 +69,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"] )
     parser.add_argument("batch_size", type = int, choices = [1, 2, 4, 8, 16] )
+    parser.add_argument("precision", nargs = "?", choices = ["bf16", "fp32"], default = "bf16") #model data precision, optional, bf16 default to best match TT
     args = parser.parse_args()
+    #NOTE: SETS DATA PRECISION BEFORE THE MODEL IS LOADED
+    if args.precision == "fp32":
+        config.DTYPE = torch.float32
+    else:
+        config.DTYPE = torch.bfloat16
     main(args.setting, config.IMG_DIR, args.batch_size)
