@@ -61,9 +61,17 @@ std::uint32_t runtime_address(const DeviceAddr address) {
   return static_cast<std::uint32_t>(address);
 }
 
-std::vector<rag::tt_metal::Candidate> run_local_candidates(
+std::uint32_t float_bits(const float value) {
+  std::uint32_t bits = 0;
+  static_assert(sizeof(bits) == sizeof(value));
+  std::memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+rag::tt_metal::CompactResult run_device_search(
     const rag::Bank& bank,
     const std::vector<float>& normalized_query,
+    const float threshold,
     const std::shared_ptr<distributed::MeshDevice>& mesh_device) {
   constexpr std::uint32_t m = TILE_HEIGHT;
   constexpr std::uint32_t k = rag::kTextDim;
@@ -91,9 +99,11 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
   query_matrix = tilize_nfaces(query_matrix, m, k);
   bank_matrix = tilize_nfaces(bank_matrix, k, n);
   auto& queue = mesh_device->mesh_command_queue();
-  distributed::MeshWorkload workload;
+  distributed::MeshWorkload scoring_workload;
+  distributed::MeshWorkload reduction_workload;
   const distributed::MeshCoordinateRange device_range(mesh_device->shape());
-  Program program;
+  Program scoring_program;
+  Program reduction_program;
   const CoreCoord grid = mesh_device->compute_with_storage_grid_size();
   const auto available_workers =
       static_cast<std::uint32_t>(grid.x * grid.y);
@@ -104,8 +114,9 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
       sizeof(bfloat16) * TILE_HEIGHT * TILE_WIDTH;
   constexpr std::uint32_t candidate_page_bytes =
       sizeof(rag::tt_metal::DeviceCandidatePage);
-  constexpr std::uint32_t candidate_page_words =
-      candidate_page_bytes / sizeof(std::uint32_t);
+  constexpr std::uint32_t result_page_bytes = 32U;
+  constexpr std::uint32_t result_page_words =
+      result_page_bytes / sizeof(std::uint32_t);
   const distributed::DeviceLocalBufferConfig tile_local_config{
       .page_size = tile_bytes, .buffer_type = BufferType::DRAM};
   const distributed::DeviceLocalBufferConfig candidate_local_config{
@@ -116,6 +127,8 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
       .size = sizeof(bfloat16) * bank_matrix.size()};
   const distributed::ReplicatedBufferConfig candidate_config{
       .size = candidate_page_bytes * active_cores};
+  const distributed::ReplicatedBufferConfig result_config{
+      .size = result_page_bytes};
   auto query_buffer = distributed::MeshBuffer::create(
       query_config,
       tile_local_config,
@@ -126,6 +139,10 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
       mesh_device.get());
   auto candidate_buffer = distributed::MeshBuffer::create(
       candidate_config,
+      candidate_local_config,
+      mesh_device.get());
+  auto result_buffer = distributed::MeshBuffer::create(
+      result_config,
       candidate_local_config,
       mesh_device.get());
 
@@ -140,22 +157,22 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
     const rag::tt_metal::WorkRange tile_range = tile_ranges[worker];
     const std::uint32_t local_nt = tile_range.end - tile_range.begin;
     CreateCircularBuffer(
-        program,
+        scoring_program,
         core,
         CircularBufferConfig(2 * tile_bytes, {{query_cb, format}})
             .set_page_size(query_cb, tile_bytes));
     CreateCircularBuffer(
-        program,
+        scoring_program,
         core,
         CircularBufferConfig(2 * tile_bytes, {{bank_cb, format}})
             .set_page_size(bank_cb, tile_bytes));
     CreateCircularBuffer(
-        program,
+        scoring_program,
         core,
         CircularBufferConfig(2 * tile_bytes, {{scores_cb, format}})
             .set_page_size(scores_cb, tile_bytes));
     CreateCircularBuffer(
-        program,
+        scoring_program,
         core,
         CircularBufferConfig(
             candidate_page_bytes,
@@ -166,7 +183,7 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
     TensorAccessorArgs(*query_buffer).append_to(reader_compile_args);
     TensorAccessorArgs(*bank_buffer).append_to(reader_compile_args);
     const auto reader = CreateKernel(
-        program,
+        scoring_program,
         kernel_root + "/reader_scores.cpp",
         core,
         DataMovementConfig{
@@ -177,7 +194,7 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
     std::vector<std::uint32_t> writer_compile_args;
     TensorAccessorArgs(*candidate_buffer).append_to(writer_compile_args);
     const auto writer = CreateKernel(
-        program,
+        scoring_program,
         kernel_root + "/writer_scores.cpp",
         core,
         DataMovementConfig{
@@ -185,7 +202,7 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
             .noc = NOC::RISCV_0_default,
             .compile_args = writer_compile_args});
     CreateKernel(
-        program,
+        scoring_program,
         kernel_root + "/compute_scores.cpp",
         core,
         ComputeConfig{
@@ -193,14 +210,14 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
             .compile_args = {mt, kt, local_nt}});
 
     SetRuntimeArgs(
-        program,
+        scoring_program,
         reader,
         core,
         {runtime_address(query_buffer->address()),
          runtime_address(bank_buffer->address()), mt, kt, global_nt,
          tile_range.begin, local_nt});
     SetRuntimeArgs(
-        program,
+        scoring_program,
         writer,
         core,
         {runtime_address(candidate_buffer->address()), worker,
@@ -210,31 +227,67 @@ std::vector<rag::tt_metal::Candidate> run_local_candidates(
   std::cout << "TT-Metal score grid: " << grid.x << 'x' << grid.y
             << ", active cores=" << active_cores
             << ", score tiles=" << global_nt
-            << ", candidate D2H bytes="
-            << candidate_page_bytes * active_cores << '\n';
+            << ", result D2H bytes="
+            << result_page_bytes << " (12-byte logical result)\n";
+
+  const CoreCoord reduction_core{0, 0};
+  CreateCircularBuffer(
+      reduction_program,
+      reduction_core,
+      CircularBufferConfig(
+          candidate_page_bytes,
+          {{query_cb, tt::DataFormat::UInt32}})
+          .set_page_size(query_cb, candidate_page_bytes));
+  CreateCircularBuffer(
+      reduction_program,
+      reduction_core,
+      CircularBufferConfig(
+          result_page_bytes,
+          {{bank_cb, tt::DataFormat::UInt32}})
+          .set_page_size(bank_cb, result_page_bytes));
+  std::vector<std::uint32_t> reduction_compile_args;
+  TensorAccessorArgs(*candidate_buffer).append_to(reduction_compile_args);
+  TensorAccessorArgs(*result_buffer).append_to(reduction_compile_args);
+  const auto reducer = CreateKernel(
+      reduction_program,
+      kernel_root + "/reduce_candidates.cpp",
+      reduction_core,
+      DataMovementConfig{
+          .processor = DataMovementProcessor::RISCV_0,
+          .noc = NOC::RISCV_0_default,
+          .compile_args = reduction_compile_args});
+  SetRuntimeArgs(
+      reduction_program,
+      reducer,
+      reduction_core,
+      {runtime_address(candidate_buffer->address()),
+       runtime_address(result_buffer->address()), active_cores,
+       float_bits(threshold), bank.size()});
 
   distributed::EnqueueWriteMeshBuffer(queue, query_buffer, query_matrix, false);
   distributed::EnqueueWriteMeshBuffer(queue, bank_buffer, bank_matrix, false);
-  workload.add_program(device_range, std::move(program));
-  distributed::EnqueueMeshWorkload(queue, workload, false);
-  std::vector<std::uint32_t> candidate_words(
-      static_cast<std::size_t>(active_cores) * candidate_page_words, 0U);
+  scoring_workload.add_program(device_range, std::move(scoring_program));
+  reduction_workload.add_program(device_range, std::move(reduction_program));
+  distributed::EnqueueMeshWorkload(queue, scoring_workload, false);
+  distributed::EnqueueMeshWorkload(queue, reduction_workload, false);
+  std::vector<std::uint32_t> result_words(result_page_words, 0U);
   distributed::EnqueueReadMeshBuffer(
-      queue, candidate_words, candidate_buffer, true);
-
-  std::vector<rag::tt_metal::Candidate> candidates;
-  candidates.reserve(active_cores);
-  for (std::uint32_t worker = 0; worker < active_cores; ++worker) {
-    rag::tt_metal::DeviceCandidatePage page{};
-    std::memcpy(
-        &page,
-        candidate_words.data() +
-            static_cast<std::size_t>(worker) * candidate_page_words,
-        sizeof(page));
-    candidates.push_back(
-        rag::tt_metal::decode_device_candidate(page, bank.size()));
+      queue, result_words, result_buffer, true);
+  if (result_words[3] != 0U) {
+    throw std::runtime_error(
+        "device global reduction reported error " +
+        std::to_string(result_words[3]));
   }
-  return candidates;
+  for (std::size_t index = 4; index < result_words.size(); ++index) {
+    if (result_words[index] != 0U) {
+      throw std::runtime_error(
+          "device global reduction returned nonzero reserved data");
+    }
+  }
+  rag::tt_metal::CompactResult result{
+      result_words[0], result_words[1], 0.0F};
+  std::memcpy(&result.score, &result_words[2], sizeof(result.score));
+  return result;
 }
 
 }  // namespace
@@ -246,16 +299,17 @@ int main(int argc, char** argv) {
   }
   try {
     const float threshold = argc == 4 ? std::stof(argv[3]) : 0.7F;
+    if (!std::isfinite(threshold)) {
+      throw std::invalid_argument("threshold must be finite");
+    }
     const rag::Bank bank(argv[1]);
     const std::vector<float> query = load_query(argv[2]);
     const std::vector<float> normalized = rag::normalize_query(query);
     const rag::Match expected = rag::search_cpu(bank, query, threshold);
 
     auto device = distributed::MeshDevice::create_unit_mesh(0);
-    const auto local_candidates =
-        run_local_candidates(bank, normalized, device);
-    const auto compact = rag::tt_metal::encode_result(
-        rag::tt_metal::reduce_candidates(local_candidates, threshold));
+    const auto compact =
+        run_device_search(bank, normalized, threshold, device);
     const rag::Match actual = rag::tt_metal::decode_result(
         compact, bank.size());
     const bool closed = device->close();
