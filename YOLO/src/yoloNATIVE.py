@@ -1,14 +1,29 @@
 from pathlib import Path #allows for finding path of input images
 from ultralytics import YOLO
-import cv2, glob, numpy as np
+import cv2, sys, numpy as np
 
-imgs = Path(__file__).parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
+IMG_DIR = Path(__file__).parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
+IMG_FORMATS = [".jpg", ".jpeg", ".png"] #same as config.IMG_FORMATS
+
+#same format of validating then loading image path in main.py
+def load_image_path(img_dir):
+    #VALIDATE IMAGE PATH
+    img_dir = Path(img_dir).expanduser().resolve()
+    if not img_dir.exists():
+        sys.exit(f"ERROR: IMAGE FOLDER NOT FOUND: {img_dir}")
+    if not img_dir.is_dir():
+        sys.exit(f"ERROR: PATH PROVIDED ISN'T A DIRECTORY: {img_dir}")
+    #return file paths of only valid file types
+    return sorted(p for p in img_dir.iterdir() if p.suffix.lower() in IMG_FORMATS)
+
+imgs = [cv2.imread(str(p)) for p in load_image_path(IMG_DIR)] #read each image
+
 model = YOLO("yolov8n.pt")
 #Use settings as config.py: 640 px, conf 0.25, IoU 0.7, GPU 0, fp32 (half=True for fp16)
 #NOTE: add compilation to match updated graph based harness
 preds = [model.predict(im, imgsz = 640, conf = 0.25, iou = 0.7, device = 0, half = False, compile = True, verbose = False)[0] for im in imgs]
-warm = 5 #skip the first few calls as warmup
-print(f"{len(preds) - warm} images, median ms per image:")
+warmup = 5 #skip the first few calls as warmup
+print(f"{len(preds) - warmup} images, median ms per image:")
 for k in ("preprocess", "inference", "postprocess"):
-    print(f"  {k:<12} {np.median([r.speed[k] for r in preds[warm:]]):.2f}") #take median latency of each stage as results.py does
+    print(f"  {k:<12} {np.median([r.speed[k] for r in preds[warmup:]]):.2f}") #take median latency of each stage as results.py does
                                                                             #NOTE: r.speed contains the per img ms latency from ultralyitics native Profile func
