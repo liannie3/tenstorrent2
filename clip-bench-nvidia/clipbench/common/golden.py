@@ -14,8 +14,6 @@ Output: parity.golden_path in base.yaml, one .npz with
     <camera>/<file stem>/encoder     (577, 1024) fp32   CLIP hidden layer fed to the projector
     <camera>/<file stem>/projector   (577, 2048) fp32   MLP projector output
 
-Read it with:
-    g = np.load(path); g['CAM_FRONT/<stem>/projector']
 """
 
 import zipfile
