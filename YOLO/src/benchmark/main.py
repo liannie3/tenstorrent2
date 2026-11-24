@@ -3,7 +3,7 @@ import sys
 import argparse #pass command line arguments to script to decide which runs to perform
 import torch
 from ultralytics import YOLO
-
+import stages
 import config
 from hardware import hardware_run_pipeline, hardware_substages, identify_monitor
 from run import run_pipeline, load_images
