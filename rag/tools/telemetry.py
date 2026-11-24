@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import subprocess
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.request import urlopen
 
 
 SAMPLE_FIELDS = [
@@ -123,6 +125,70 @@ def parse_tenstorrent_json(text: str, device: int) -> dict[str, float | str | No
     }
 
 
+def parse_prometheus_labels(encoded: str) -> dict[str, str]:
+    return {
+        match.group(1): bytes(match.group(2), "utf-8").decode("unicode_escape")
+        for match in re.finditer(r'(\w+)="((?:\\.|[^"\\])*)"', encoded)
+    }
+
+
+def parse_tt_telemetry(
+    text: str, device: int
+) -> dict[str, float | str | None]:
+    """Parse one device from a tt-telemetry Prometheus metrics snapshot."""
+    series: dict[str, list[tuple[dict[str, str], float]]] = {}
+    pattern = re.compile(
+        r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+"
+        r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$"
+    )
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = pattern.match(line)
+        if match is None:
+            continue
+        value = float(match.group(3))
+        if math.isfinite(value):
+            series.setdefault(match.group(1), []).append((
+                parse_prometheus_labels(match.group(2) or ""), value
+            ))
+
+    identity_rows = series.get("tt_asic_temperature_celsius", [])
+    identities = sorted({
+        (labels.get("tray", ""), labels.get("chip", ""))
+        for labels, _ in identity_rows
+    })
+    if device >= len(identities):
+        raise ValueError(f"tt-telemetry snapshot has no device {device}")
+    tray, chip = identities[device]
+
+    def metric(*names: str) -> float | None:
+        for name in names:
+            for labels, value in series.get(name, []):
+                if labels.get("tray", "") == tray and labels.get("chip", "") == chip:
+                    return value
+        return None
+
+    temperature = metric("tt_asic_temperature_celsius")
+    limit = metric("tt_thermal_throttle_limit_celsius")
+    throttled = None
+    if temperature is not None and limit is not None:
+        throttled = "1" if temperature >= limit else "0"
+    return {
+        "temperature_c": temperature,
+        "power_w": metric("tt_tdp_w"),
+        "core_clock_mhz": metric("tt_ai_clock_mhz"),
+        "memory_clock_mhz": metric("tt_dram_speed_mbps"),
+        "utilization_pct": metric(
+            "tt_dispatch_core_efficiency_percent",
+            "tt_dispatch_utilization_percent",
+        ),
+        "thermal_limit_c": limit,
+        "throttled": throttled,
+    }
+
+
 def parse_tegrastats(
     text: str, power_rail: str = "unspecified"
 ) -> dict[str, float | str | None]:
@@ -216,6 +282,13 @@ def sample_once(
             stdout, _ = process.communicate(timeout=2)
         return parse_tegrastats(stdout, power_rail)
     if provider == "tenstorrent":
+        endpoint = os.environ.get(
+            "TT_TELEMETRY_ENDPOINT", "http://127.0.0.1:8080/metrics"
+        )
+        with urlopen(endpoint, timeout=5) as response:
+            snapshot = response.read().decode("utf-8")
+        return parse_tt_telemetry(snapshot, device)
+    if provider == "tenstorrent-smi":
         completed = subprocess.run(
             ["tt-smi", "-s"],
             check=True, capture_output=True, text=True, timeout=5,
@@ -229,7 +302,9 @@ class TelemetrySampler:
         self, provider: str, device: int = 0, interval_ms: int = 500,
         power_rail: str = "unspecified",
     ):
-        if provider not in {"nvidia", "jetson", "tenstorrent"}:
+        if provider not in {
+            "nvidia", "jetson", "tenstorrent", "tenstorrent-smi"
+        }:
             raise ValueError(f"unsupported telemetry provider: {provider}")
         if device < 0 or interval_ms < 100:
             raise ValueError("device must be non-negative and interval at least 100 ms")

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -20,6 +21,9 @@ void validate_candidate(const Candidate& candidate) {
 static_assert(std::is_standard_layout_v<CompactResult>);
 static_assert(std::is_trivially_copyable_v<CompactResult>);
 static_assert(sizeof(CompactResult) == 12);
+static_assert(std::is_standard_layout_v<DeviceCandidatePage>);
+static_assert(std::is_trivially_copyable_v<DeviceCandidatePage>);
+static_assert(sizeof(DeviceCandidatePage) == 32);
 
 std::vector<WorkRange> partition_entries(
     const std::uint32_t valid_entries,
@@ -115,6 +119,31 @@ Match decode_result(
     throw std::out_of_range("device result id is outside the valid bank");
   }
   return {result.accepted != 0U, result.id, result.score};
+}
+
+Candidate decode_device_candidate(
+    const DeviceCandidatePage& page,
+    const std::uint32_t valid_entries) {
+  if (page.error != 0U || page.valid != 1U ||
+      (page.score_bf16 & 0xFFFF0000U) != 0U) {
+    throw std::runtime_error("device returned an invalid local candidate");
+  }
+  if (valid_entries == 0 || page.id >= valid_entries) {
+    throw std::out_of_range("device candidate id is outside the valid bank");
+  }
+  if (std::any_of(
+          page.reserved.begin(), page.reserved.end(),
+          [](const std::uint32_t value) { return value != 0U; })) {
+    throw std::runtime_error("device candidate reserved fields are nonzero");
+  }
+
+  const std::uint32_t fp32_bits = page.score_bf16 << 16U;
+  float score = 0.0F;
+  std::memcpy(&score, &fp32_bits, sizeof(score));
+  if (!std::isfinite(score)) {
+    throw std::runtime_error("device candidate score is non-finite");
+  }
+  return {score, page.id, true};
 }
 
 }  // namespace rag::tt_metal

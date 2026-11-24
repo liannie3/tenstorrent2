@@ -13,7 +13,9 @@ The implementation status and milestones are tracked in
 Run these commands on the p150a host and save their complete output:
 
 ```bash
-tt-smi -s
+curl -fsS "${TT_TELEMETRY_ENDPOINT:-http://127.0.0.1:8080/metrics}" \
+  | grep -E '^(tt_asic_temperature_celsius|tt_tdp_w|tt_ai_clock_mhz)'
+tt-smi -s  # retained only as an inventory and compatibility check
 lspci -D -nn -d 1e52:
 uname -a
 python3 --version
@@ -154,10 +156,13 @@ padding, and threshold-boundary tests pass.
 
 ## 7. Thermal telemetry
 
-First verify that structured snapshots work:
+The retained benchmark path uses the passive Prometheus endpoint exposed by
+`tt-telemetry`. Verify the collector before running a benchmark:
 
 ```bash
-tt-smi -s | python -m json.tool
+export TT_TELEMETRY_ENDPOINT=http://127.0.0.1:8080/metrics
+curl -fsS "$TT_TELEMETRY_ENDPOINT" | grep -E \
+  '^(tt_asic_temperature_celsius|tt_tdp_w|tt_ai_clock_mhz|tt_dispatch_core_efficiency_percent)'
 ```
 
 The benchmark harness samples Tenstorrent telemetry with:
@@ -168,14 +173,13 @@ The benchmark harness samples Tenstorrent telemetry with:
 --telemetry-interval-ms 500
 ```
 
-It records raw samples in `rag_telemetry.csv` and aggregated temperature, power, clock,
-and throttling results in `rag_thermal_layer.csv`. Sampling covers the entire benchmark
-child process and is not currently used to calculate energy per query.
+It records `tt_asic_temperature_celsius`, `tt_tdp_w`, `tt_ai_clock_mhz`, DRAM speed,
+dispatch efficiency, and the thermal throttle limit in `rag_telemetry.csv`, then writes
+aggregates to `rag_thermal_layer.csv`. The device index selects the sorted `(tray, chip)`
+identity from the Prometheus labels. Sampling covers the complete benchmark process.
 
-Some TT-SMI/driver versions may contend with an exclusively opened device. Validate
-concurrent `tt-smi -s` sampling during a short TT-NN smoke test before the retained run.
-If samples fail, preserve the errors and use a passive sysfs or supported tt-toplike
-backend behind the same CSV schema rather than reporting zeros.
+Use `--telemetry-provider tenstorrent-smi` only as an explicit compatibility fallback.
+Do not silently mix `tt-smi` samples with retained `tt-telemetry` results.
 
 ## 8. CPU affinity and PCIe NUMA placement
 

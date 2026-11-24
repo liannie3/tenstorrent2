@@ -119,6 +119,31 @@ void test_sharded_compact_result() {
   });
 }
 
+void test_device_candidate_page() {
+  using rag::tt_metal::DeviceCandidatePage;
+  const auto candidate = rag::tt_metal::decode_device_candidate(
+      DeviceCandidatePage{0x3F60U, 17U, 1U, 0U, {}}, 18U);
+  assert(candidate.valid && candidate.id == 17U);
+  assert(std::abs(candidate.score - 0.875F) < 1e-7F);
+
+  expect_throws<std::runtime_error>([] {
+    rag::tt_metal::decode_device_candidate(
+        DeviceCandidatePage{0x3F00U, 0U, 0U, 0U, {}}, 1U);
+  });
+  expect_throws<std::runtime_error>([] {
+    rag::tt_metal::decode_device_candidate(
+        DeviceCandidatePage{0x3F00U, 0U, 1U, 1U, {}}, 1U);
+  });
+  expect_throws<std::out_of_range>([] {
+    rag::tt_metal::decode_device_candidate(
+        DeviceCandidatePage{0x3F00U, 1U, 1U, 0U, {}}, 1U);
+  });
+  expect_throws<std::runtime_error>([] {
+    rag::tt_metal::decode_device_candidate(
+        DeviceCandidatePage{0x7FC0U, 0U, 1U, 0U, {}}, 1U);
+  });
+}
+
 }  // namespace
 
 int main() {
@@ -126,4 +151,5 @@ int main() {
   test_reduction();
   test_wire_contract();
   test_sharded_compact_result();
+  test_device_candidate_page();
 }

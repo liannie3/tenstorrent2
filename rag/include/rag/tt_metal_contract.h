@@ -2,6 +2,7 @@
 
 #include "rag/search.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -30,6 +31,17 @@ struct CompactResult {
   float score = 0.0f;
 };
 
+// One DRAM page emitted by each participating Tensix core. The score is the
+// raw BF16 result produced by the matmul packer. A 32-byte page preserves DRAM
+// alignment and leaves an explicit error field for device-side validation.
+struct DeviceCandidatePage {
+  std::uint32_t score_bf16 = 0;
+  std::uint32_t id = 0;
+  std::uint32_t valid = 0;
+  std::uint32_t error = 0;
+  std::array<std::uint32_t, 4> reserved{};
+};
+
 std::vector<WorkRange> partition_entries(
     std::uint32_t valid_entries,
     std::uint32_t available_workers);
@@ -51,5 +63,8 @@ CompactResult compact_result_from_scores(
 
 CompactResult encode_result(const Candidate& candidate);
 Match decode_result(const CompactResult& result, std::uint32_t valid_entries);
+Candidate decode_device_candidate(
+    const DeviceCandidatePage& page,
+    std::uint32_t valid_entries);
 
 }  // namespace rag::tt_metal

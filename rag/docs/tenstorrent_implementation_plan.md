@@ -8,12 +8,14 @@ command adapter, strict C++ wire/reduction contracts, and a portable executable
 oracle covering device normalization, sharded scoring, deterministic reduction,
 gating, and selected-feature gathering. The build has an explicit, pinned-SDK
 `RAG_ENABLE_TT_METAL` boundary. The initial single-core reader/compute/writer
-program and launcher have compiled and passed an 8-entry correctness smoke test
-on the Blackhole p150a. That prototype still materializes and downloads all scores;
-multicore local reduction, device global reduction, compact-result transfer, device
-normalization, and production benchmarking remain outstanding.
+program and launcher have compiled and passed both single-core and 107-core
+correctness smoke tests on the Blackhole p150a. The validated diagnostic prototype
+materialized and downloaded all scores. The next revision now performs per-core local
+selection and downloads one candidate page per core, but still awaits p150a validation.
+Device global reduction, compact-result transfer, device normalization, and production
+benchmarking remain outstanding.
 
-### Progress snapshot (2026-11-23)
+### Progress snapshot (2026-11-24)
 
 | Capability | Status | Evidence / remaining condition |
 | --- | --- | --- |
@@ -22,7 +24,8 @@ normalization, and production benchmarking remain outstanding.
 | Portable correctness contracts | Complete | C++ and Python tests specify partitioning, finite-score validation, lower-ID tie breaking, inclusive thresholding, compact wire results, and feature gathering. |
 | Single-core TT-Metal scoring | Complete as a prototype | The 8-entry p150a smoke matched ID/gate; score was `0.996094` versus CPU `1.0`. |
 | Sharded compact-result oracle | Complete | The host contract reduces per-shard winners and emits the same 12-byte result required from the final kernels. |
-| Multicore score sharding | Implemented; awaiting p150a validation | The launcher discovers the runtime grid, partitions score tiles over active cores, and gives each reader/writer a bounded global tile range. It intentionally retains the full-score diagnostic output. |
+| Multicore score sharding | Complete as a diagnostic prototype | Validated on the p150a's 11x10 runtime grid with 107 active cores and 107 score tiles. Both the all-tie case (ID 0) and a unique winner in the final partial tile (ID 3399) matched CPU exactly. |
+| Per-core local winners | Implemented; awaiting p150a validation | Each writer scans the first result row in face-major BF16 tile layout, masks padded IDs, applies numeric ordering with lower-ID tie retention, and emits one aligned 32-byte candidate page. The host validates and globally reduces those pages. |
 | Multicore TT-Metal optimized backend | Not complete | Must shard over the runtime grid, reduce locally and globally on device, and avoid a full score tensor/transfer. |
 | Fully device-resident numeric retrieval | Not complete | Query normalization and optional selected-feature gathering remain device work. |
 | Final comparison campaign | Not started | Requires correctness gates, ten release trials, timing/profile/power runs, and NVIDIA comparison reports. |
@@ -508,7 +511,7 @@ test responsibilities should remain.
 5. [x] Initial quality-gate and benchmark integration.
 6. [x] Separate timing and Tracy profiler workflow.
 7. [x] Single-core Metalium dot-product prototype.
-8. [~] Multicore score sharding implemented; p150a validation and local-winner fusion remain.
+8. [~] Multicore score sharding validated; local-winner fusion implemented and awaiting p150a validation.
 9. [ ] Deterministic global reduction, thresholding, and compact D2H result.
 10. [ ] Persistent bank/program lifecycle and batch-capable benchmark adapter.
 11. [ ] Device normalization and optional visual-feature gather.
@@ -526,12 +529,15 @@ validated on the pinned p150a before the next optimization is layered on top.
 2. **Create a multicore scoring prototype.** Discover the runtime compute/storage
    grid, call `partition_entries`, assign contiguous entry ranges, and run one program
    per active core. Initially permit one score shard per core in DRAM so work splitting,
-   tile offsets, and numerical behavior can be validated independently. The code is
-   implemented; compilation and correctness validation on the pinned p150a are next.
+   tile offsets, and numerical behavior can be validated independently. This stage
+   passed on the pinned p150a with 107 active cores. The final partial tile produced
+   the unique expected winner at ID 3399, confirming global tile offsets and writes.
 3. **Fuse per-core local selection.** Replace each score shard with one local
    `{score, id, valid}` candidate. Exclude padded columns explicitly. Validate each
    local winner against the portable oracle for uneven partitions and bank sizes
-   `1, 31, 32, 33, 3400`.
+   `1, 31, 32, 33, 3400`. The implementation now emits one aligned candidate page
+   per active core and no longer writes the complete score tensor to DRAM; p150a
+   compilation and adversarial validation are next.
 4. **Add deterministic global reduction.** Reduce candidates on device using higher
    finite score then lower ID, apply the inclusive threshold, and write one
    `CompactResult` per query. Confirm that D2H bytes are 12 per query and that no

@@ -145,8 +145,12 @@ limit collection.
 # NVIDIA systems with nvidia-smi telemetry support
 python tools/bench_harness.py ... --telemetry-provider nvidia
 
-# Tenstorrent through structured tt-smi snapshots
+# Tenstorrent through the tt-telemetry Prometheus endpoint
+export TT_TELEMETRY_ENDPOINT=http://127.0.0.1:8080/metrics
 python tools/bench_harness.py ... --telemetry-provider tenstorrent
+
+# Explicit compatibility fallback only
+python tools/bench_harness.py ... --telemetry-provider tenstorrent-smi
 ```
 
 Use `--telemetry-device N` and `--telemetry-interval-ms N` to select the device and
@@ -158,10 +162,10 @@ Sampling covers the complete benchmark child process, including startup. Therefo
 power samples are not used to calculate energy per query. A sampling failure is recorded
 in the raw CSV and does not become a zero or terminate the benchmark.
 
-Tenstorrent telemetry tooling can vary by installed stack, and some versions may contend
-with an exclusively opened device. Validate `tt-smi -s` concurrently with a short smoke
-run before the retained campaign. If it cannot sample concurrently, use the passive
-sysfs/tt-toplike backend supplied by that host and adapt it behind the same CSV schema.
+For retained Tenstorrent campaigns, validate the `tt-telemetry` endpoint concurrently
+with a short smoke run. Record the endpoint and collector version in the campaign
+manifest. Keep `tt-smi` as an explicitly named fallback so results from the two sources
+cannot be confused.
 
 Tracy is optional for comparing host-thread behavior, but device diagnostics remain
 vendor-native: Tracy and the TT device profiler for Tenstorrent; NVTX, Nsight Systems,

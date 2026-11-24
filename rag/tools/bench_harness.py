@@ -357,7 +357,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--telemetry-provider",
-        choices=("none", "nvidia", "jetson", "tenstorrent"),
+        choices=(
+            "none", "nvidia", "jetson", "tenstorrent", "tenstorrent-smi"
+        ),
         default="none",
         help="sample accelerator temperature, power, and clocks during each trial",
     )

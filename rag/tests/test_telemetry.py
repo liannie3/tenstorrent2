@@ -85,6 +85,28 @@ def main() -> None:
     assert tt["thermal_limit_c"] == 90.0
     assert tt["throttled"] == "0"
 
+    tt_prometheus = telemetry.parse_tt_telemetry(
+        '''
+# HELP tt_asic_temperature_celsius ASIC temperature
+tt_asic_temperature_celsius{tray="0",chip="0"} 72.5
+tt_tdp_w{tray="0",chip="0"} 188.2
+tt_ai_clock_mhz{tray="0",chip="0"} 1250
+tt_dram_speed_mbps{tray="0",chip="0"} 28000
+tt_dispatch_core_efficiency_percent{tray="0",chip="0"} 84.5
+tt_thermal_throttle_limit_celsius{tray="0",chip="0"} 90
+''',
+        0,
+    )
+    assert tt_prometheus == {
+        "temperature_c": 72.5,
+        "power_w": 188.2,
+        "core_clock_mhz": 1250.0,
+        "memory_clock_mhz": 28000.0,
+        "utilization_pct": 84.5,
+        "thermal_limit_c": 90.0,
+        "throttled": "0",
+    }
+
     samples = []
     for trial, temperature, power in (("1", "60", "100"), ("1", "70", "120")):
         row = {field: "" for field in telemetry.SAMPLE_FIELDS}
