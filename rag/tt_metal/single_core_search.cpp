@@ -97,7 +97,8 @@ std::vector<float> run_scores(
   const distributed::MeshCoordinateRange device_range(mesh_device->shape());
   Program program;
   const CoreCoord grid = mesh_device->compute_with_storage_grid_size();
-  const std::uint32_t available_workers = grid.x * grid.y;
+  const auto available_workers =
+      static_cast<std::uint32_t>(grid.x * grid.y);
   const auto tile_ranges = rag::tt_metal::partition_entries(
       global_nt, available_workers);
   const auto active_cores = static_cast<std::uint32_t>(tile_ranges.size());
@@ -230,8 +231,9 @@ int main(int argc, char** argv) {
     const CoreCoord grid = device->compute_with_storage_grid_size();
     const std::uint32_t score_tiles =
         round_up(bank.size(), TILE_WIDTH) / TILE_WIDTH;
+    const auto grid_workers = static_cast<std::uint32_t>(grid.x * grid.y);
     const std::uint32_t active_workers =
-        std::min(score_tiles, grid.x * grid.y);
+        std::min(score_tiles, grid_workers);
     const std::vector<float> scores = run_scores(bank, normalized, device);
     const auto compact = rag::tt_metal::compact_result_from_scores(
         scores, active_workers, threshold);
