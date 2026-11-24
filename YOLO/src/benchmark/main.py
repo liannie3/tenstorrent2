@@ -16,7 +16,7 @@ def load_model(fp16):
         #.to(DEVICE) puts entire model on same DEVICE
     if(fp16):
         model.half()
-    return model
+    stages.compiled["model"] = torch.compile(model, mode = "default", backend = "inductor", dynamic = False)
 
 def load_image_path(img_dir):
     #VALIDATE IMAGE PATH

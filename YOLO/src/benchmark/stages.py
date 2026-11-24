@@ -13,6 +13,8 @@ import config
 #imports both the timed wrapper function and the timings dictionary from timing
 from timing import timed, timings
 
+compiled = {} #holds inferenced graphs
+
 #######################################################################################################################################################################  
 #                        | | | |                                                                                                                                      #
 #   Pre-Processing Stage V V V V                                                                                                                                      #
@@ -81,27 +83,11 @@ def run_layers(model, layers, x, y):
 #       which submodel? Similarly to how we identified spatial pooling to be the 9th layer
 def inference_stage(model, im, device = 'cuda:0'):
     store = timings["inference"]
-    y = [] #store feature map tensors from earlier layers for future use
-    x = im
-    #INFERENCE STEP A: BACKBONE extract features from input at multiple resolutions
-    #C2F (CSP (Constraint Satisfaction Problem) Bottleneck with 2 convolutions, faster)
-    with timed(store, "A_backbone", device):
-        x = run_layers(model, model.model[: config.BACKBONE_BOUNDARY+1], x, y)
-        #NOTE: loops through each layer interior to yolo until reaching the backbone stage's boundary
-        #NOTE: potential inference step: SPATIAL POOLING which is considered separate from the backbone occurs
-        #                        at layer 9 inside the model might want to pull that one out of backbone
-
-    #INFERENCE STEP B: NECK fuse features across scales so both large and small objects have context
-    #                  occurs in layers 10-21 of model
-    with timed(store, "B_neck", device):
-        x = run_layers(model, model.model[config.BACKBONE_BOUNDARY+1: config.NECK_BOUNDARY+1], x, y)
-        #NOTE: loops through each layer interior to yolov8 until reaching the backbone stage's boundary
-                
-    #INFERENCE STEP D: HEAD predict bounding boxes and class scores from fused features
-    #                  occurs in layer 22
-    with timed(store, "C_head", device):
-        x = run_layers(model, model.model[config.NECK_BOUNDARY+1:], x, y) #runs HEAD layer only
-    return x #returns tuple of y (inferenced tensor), preds (dictionary of head layer's raw input)
+    #whole model compiled as one graph like ultralytics predict(compile=True),
+    #backbone/neck/head can't be timed separately anymore
+    with timed(store, "Full_model", device):
+        x = compiled["model"](im) #same output as run_layers on the last layer
+    return x
 
 ########################################################################################################################################################################
 #                         | | | |                                                                                                                                      #
