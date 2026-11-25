@@ -31,8 +31,15 @@ def load_image_path(img_dir):
     #return file paths of only valid file types
     return sorted(p for p in img_dir.iterdir() if p.suffix.lower() in config.IMG_FORMATS)
     
-def main(setting, img_dir, batch_size : int = 1):
+def main(setting, img_dir, batch_size : int = 1, step : int = 1):
     img_paths = load_image_path(img_dir)
+    img_paths = img_paths[::step] #NOTE: used for demo to exe time covering entire dataset
+                                             #      every nth image, so a step of 4 runs 101/404 imgs through
+                                             #      superior to simple subset of imgs since nu scences db are in order and some parts of db could be less dense w/ objs
+    if not step == 1:
+        print(f"   Using a subset of total {len(img_paths)} images (every {step} images from the test set)")
+    else:
+        print(f"   Using entire set of {len(img_paths)} test images")
     model = load_model()
     results = None
 
@@ -67,13 +74,14 @@ def main(setting, img_dir, batch_size : int = 1):
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"] )
-    parser.add_argument("batch_size", type = int, choices = [1, 2, 4, 8, 16] )
-    parser.add_argument("precision", nargs = "?", choices = ["bf16", "fp32"], default = "bf16") #model data precision, optional, bf16 default to best match TT
+    parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"], default = "latency", help = "determines what setting harness runs under (latency, e2e, profile, hardware, or holistic)")
+    parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (default to 1)")
+    parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT
+    parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image") #used to create accurate subset of db
     args = parser.parse_args()
     #NOTE: SETS DATA PRECISION BEFORE THE MODEL IS LOADED
     if args.precision == "fp32":
         config.DTYPE = torch.float32
     else:
         config.DTYPE = torch.bfloat16
-    main(args.setting, config.IMG_DIR, args.batch_size)
+    main(args.setting, config.IMG_DIR, args.batch_size, args.step)
