@@ -34,7 +34,7 @@ def main(setting, img_dir, batch_size : int = 1, fp16 : bool = False):
     results = None
         
     if setting in ("latency", "holistic", "profile"):
-        print(f"   PASS 1: stage wall times only (synchronous profiling)   ")
+        print(f"   PASS 1: stage wall times only (ULTRALYTICS-style: synchronous profiling)   ")
         config.SUBSTEP_TIMING = False
         results = run_pipeline(model, img_paths, batch_size, config.DEVICE, fp16)
         if setting != "profile":
@@ -58,9 +58,9 @@ def main(setting, img_dir, batch_size : int = 1, fp16 : bool = False):
     return results
     
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("setting", choices = ["latency", "hardware", "holistic", "profile"] )
-    parser.add_argument("batch_size", type = int, choices = [1, 2, 4, 8, 16] )
-    parser.add_argument("--fp16", action="store_true")
+    parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
+    parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile"], default = "profile", help = "determines what setting harness runs under (defaulted to profile)")
+    parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
+    parser.add_argument("--precision", choices = ["fp32", "fp16"], default = "fp32", help = "determines model data precision (defaulted to fp32)")
     args = parser.parse_args()
-    main(args.setting, config.IMG_DIR, args.batch_size, args.fp16)
+    main(args.setting, config.IMG_DIR, args.batch_size, args.precision == "fp16")
