@@ -26,7 +26,7 @@ import ttnn
 from ...common import data
 from .. import model_tt as model_lib
 
-MAX_FRAMES = 10         # Profiler buffers are small and profiling is slow, so keep this short
+MAX_FRAMES = 2          # Profiler buffers are small and profiling is slow, so keep this short
 
 
 ## Tracy zone = NVTX range. Same names as deep_metrics.push()

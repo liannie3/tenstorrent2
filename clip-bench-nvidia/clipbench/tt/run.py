@@ -43,7 +43,7 @@ TEST_NAMES = ('e2e_latency', 'hardware_perf', 'tracy_stage')
 DEFAULT_TESTS = ['e2e_latency']     # hardware_perf runs on its own via --test
 
 
-TRACY_WARMUP_ITERS = 2      # first pass compiles, the second confirms the program cache is hit
+TRACY_WARMUP_ITERS = 1      # one pass compiles every kernel; more only grows the .tracy file
 
 
 ## Warmup loop for each subtest. The first pass also compiles every kernel.
