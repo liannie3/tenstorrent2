@@ -47,7 +47,8 @@ DTYPE = torch.bfloat16 #set datatype to bf16 to match TT harness
 COMPILE_WARMUP = 2 #indicates the need for warming up on the first and second calls to compilation WITHOUT timing
                    #1st is the compilation of all graphs, 2nd is the recompilation of detect's head
                    #TODO: see if TT wants to compare compilation times between TT and CUDA
-                   
+COMPILE_BACKEND = "inductor" #torch.compile backend: "inductor" = fused Triton kernels (default), "aot_eager" = graph captured, one stock kernel per op (no fusion)
+
 #boundary layer indicies from ultralytics/cfg/models/v8/yolov8.yaml
 BACKBONE_BOUNDARY = 9 #indicates backbone layers are 0-9 
 NECK_BOUNDARY = 21 #indicates neck layers are 10-21.
