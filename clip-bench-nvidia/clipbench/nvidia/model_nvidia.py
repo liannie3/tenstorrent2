@@ -94,4 +94,10 @@ def select_image_features(outputs, config):
     features = outputs.hidden_states[config['model']['layer_index']]
     if not config['model']['keep_cls']:
         features = features[:, 1:, :]
+
+    ## Encoder and projector are separate compiled graphs. Calling the projector
+    ## starts a new CUDA graph run, which frees the encoder's output buffers, so
+    ## the features have to be copied out first.
+    if config['run'].get('cuda_graph', False):
+        features = features.clone()
     return features
