@@ -8,8 +8,8 @@ from torchvision.ops import box_iou
 
 #pass file names not paths for ease of use
 GOLDEN_DIR = Path(__file__).parent.parent.parent.parent / "benchmarking" / "golden_files" #compare.py is currently in YOLO/src/valid/golden_file_accuracy, 4 parents up is YOLO folder
-golden = torch.load(GOLDEN_DIR / "golden_files" / f"golden_{sys.argv[1]}.pt")  #golden reference detections (e.g. golden_jetson_fp32.pt)
-test = torch.load(GOLDEN_DIR / "golden_files" / f"golden_{sys.argv[2]}.pt") #detections being checked (e.g. golden_tt_bf16.pt)
+golden = torch.load(GOLDEN_DIR / f"golden_{sys.argv[1]}.pt")  #golden reference detections (e.g. golden_jetson_fp32.pt)
+test = torch.load(GOLDEN_DIR / f"golden_{sys.argv[2]}.pt") #detections being checked (e.g. golden_tt_bf16.pt)
 
 if len(golden) != len(test):
     sys.exit("ERROR: FILES HAVE A DIFFERENT NUMBER OF IMAGES")
