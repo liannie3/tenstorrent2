@@ -1,6 +1,6 @@
 import sys
 import subprocess
-
+from pathlib import Path
 import argparse
 
 parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
@@ -32,7 +32,7 @@ for i in range(args.iterations):
 
 
 #CAPTURE HARNESS TIMING
-
+harness_names = {"pre_processing": "preprocess", "inference": "inference", "post_processing": "postprocess"}
 harness_times = {
             "preprocess": [],
             "inference": [],
@@ -68,36 +68,36 @@ harness_med = {
             "inference": 0,
             "postprocess": 0
 }
-
+native_total = 0; harness_total = 0;
 print(f"\n  {'STAGE':<12} {'native ms':>10} {'harness ms':>11} {'diff':>8}")
 for stage in native_times:
-    native_med[stage] += sum(native_times[stage]) / len(native_times[stage]); native_total += sum(native_times[stage]) / len(native_times[stage])
-    harness_med[stage] += sum(harness_times[stage]) / len(harness_times[stage]); harness_total += sum(harness_times[stage]) / len(harness_times[stage])
-
+    native_med[stage] += sum(native_times[stage]) / len(native_times[stage]); native_total += native_med[stage]
+    harness_med[stage] += sum(harness_times[stage]) / len(harness_times[stage]); harness_total += harness_med[stage]
+    print(f"  {stage:<12} {native_med[stage]:>10.3f} {harness_med[stage]:>11.3f} {(harness_med[stage] - native_med[stage]) / native_med[stage] * 100:>+7.1f}%")
 #convert differences to percentage
 
-total_diff = ( abs(harness_total-native_total)/ native_total) * 100
+total_diff = ( (harness_total-native_total)/ native_total) * 100
 print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {total_diff:>+7.1f}%")
-if total_diff > 5:
-    print(f"    ===Holistic Native latency validation check FAILED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+7.1f}%")
+if abs(total_diff) > 5:
+    print(f"    ===Holistic Native latency validation check FAILED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+.1f}%")
 else:
-    print(f"    ===Holistic Native latency validation check PASSED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+7.1f}%")
+    print(f"    ===Holistic Native latency validation check PASSED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+.1f}%")
 
-pre_diff = ( abs(harness_med[preprocess]-native_med[preprocess])/ native_med[preprocess]) * 100 
+pre_diff = ( (harness_med["preprocess"]-native_med["preprocess"])/ native_med["preprocess"]) * 100 
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {pre_diff:>+7.1f}%")
-if pre_diff > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+7.1f}%")
+if abs(pre_diff) > 5:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+7.1f}%")
-inf_diff = ( abs(harness_med[inference]-native_med[inference])/ native_med[inference]) * 100
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+.1f}%")
+inf_diff = ( (harness_med["inference"]-native_med["inference"])/ native_med["inference"]) * 100
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {inf_diff:>+7.1f}%")
-if inf_diff > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+7.1f}%")
+if abs(inf_diff) > 5:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+7.1f}%")
-post_diff = ( abs(harness_med[postprocess]-native_med[postprocess])/ native_med[postprocess]) * 100
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+.1f}%")
+post_diff = ( (harness_med["postprocess"]-native_med["postprocess"])/ native_med["postprocess"]) * 100
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {post_diff:>+7.1f}%")
-if post_diff > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+7.1f}%")
+if abs(post_diff) > 5:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+7.1f}%")
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+.1f}%")
