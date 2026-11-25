@@ -2,7 +2,7 @@ from pathlib import Path #allows for finding path of input images
 from ultralytics import YOLO
 import cv2, sys, numpy as np
 
-IMG_DIR = Path(__file__).parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
+IMG_DIR = Path(__file__).parent.parent.parent / "input_images" / "CAM_FRONT" #YOLO/input_images/CAM_FRONT, from wherever this is run
 IMG_FORMATS = [".jpg", ".jpeg", ".png"] #same as config.IMG_FORMATS
 
 #same format of validating then loading image path in main.py
@@ -21,7 +21,7 @@ imgs = [cv2.imread(str(p)) for p in load_image_path(IMG_DIR)] #read each image
 model = YOLO("yolov8n.pt")
 #Use settings as config.py: 640 px, conf 0.25, IoU 0.7, GPU 0, fp32 (half=True for fp16)
 #NOTE: add compilation to match updated graph based harness
-preds = [model.predict(im, imgsz = 640, conf = 0.25, iou = 0.7, device = 0, compile = True, verbose = False, rect = False)[0] for im in imgs]
+preds = [model.predict(im, imgsz = 640, conf = 0.25, iou = 0.7, device = 0, compile = True, verbose = False, rect = True)[0] for im in imgs]
 warmup = 5 #skip the first few calls as warmup
 print(f"{len(preds) - warmup} images, median ms per image:")
 for k in ("preprocess", "inference", "postprocess"):
