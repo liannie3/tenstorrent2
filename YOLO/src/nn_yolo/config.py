@@ -26,7 +26,7 @@ CSV_FIELDS = ["timestamp", "script", "pass", "device", "batch_size", "num_images
 VERIFY_FIELDS = ["timestamp", "device", "batch_size", "input_hw", "act_mem", "weights_dtype", "math_fidelity", "decode",
                  "check", "pcc", "status"]
 IMG_FORMATS = [".jpg", ".jpeg", ".png"]
-
+INPUT_HW = (384, 640) #match the CUDA and TT-XLA letterbox
 #pipeline stages
 STAGES = ("pre_processing", "inference", "post_processing")
 
