@@ -26,7 +26,6 @@ CSV_FIELDS = ["timestamp", "script", "pass", "device", "batch_size", "num_images
 VERIFY_FIELDS = ["timestamp", "device", "batch_size", "input_hw", "act_mem", "weights_dtype", "math_fidelity", "decode",
                  "check", "pcc", "status"]
 IMG_FORMATS = [".jpg", ".jpeg", ".png"]
-INPUT_HW = (384, 640) #match the CUDA and TT-XLA letterbox
 #pipeline stages
 STAGES = ("pre_processing", "inference", "post_processing")
 
@@ -39,7 +38,7 @@ WEIGHTS = "yolov8n.pt"
 #TT kernels are compiled for one static shape, so the letterbox always pads to INPUT_HW (ultralytics uses auto=False for static
 #backends like TensorRT for the same reason). The CUDA run used auto=True, which turns a 1600x900 CAM_FRONT frame into 384x640.
 #Use --input-hw 384 640 to reproduce that shape on TT for an apples-to-apples comparison.
-INPUT_HW = (640, 640)
+INPUT_HW = (384, 640) #match the CUDA and TT-XLA letterbox NOTE: USED TOBE 640 X 640
 BATCH_SIZE = 1
 CONF_THRES = 0.25 #confidence threshold for NMS
 IOU_THRESH = 0.70 #intersection over union threshold for NMS
