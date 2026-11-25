@@ -28,8 +28,11 @@ def load_image_path(img_dir):
     #return file paths of only valid file types
     return sorted(p for p in img_dir.iterdir() if p.suffix.lower() in config.IMG_FORMATS)
     
-def main(setting, img_dir, batch_size : int = 1, fp16 : bool = False):
+def main(setting, img_dir, batch_size : int = 1, fp16 : bool = False, step : int = 1):
     img_paths = load_image_path(img_dir)
+    img_paths = img_paths[::step] #NOTE: used for demo to exe time covering entire dataset
+                                                 #      every nth image, so a step of 4 runs 101/404 imgs through
+                                                 #      superior to simple subset of imgs since nu scences db are in order and some parts of db could be less dense w/ objs
     model = load_model(fp16)
     results = None
         
@@ -62,5 +65,6 @@ if __name__ == "__main__":
     parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile"], default = "profile", help = "determines what setting harness runs under (defaulted to profile)")
     parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
     parser.add_argument("--precision", choices = ["fp32", "fp16"], default = "fp32", help = "determines model data precision (defaulted to fp32)")
+    parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
     args = parser.parse_args()
-    main(args.setting, config.IMG_DIR, args.batch_size, args.precision == "fp16")
+    main(args.setting, config.IMG_DIR, args.batch_size, args.precision == "fp16", args.step)
