@@ -73,13 +73,12 @@ def main(setting, img_dir, batch_size : int = 1, step : int = 1):
     return results
     
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
     parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"], default = "latency", help = "determines what setting harness runs under (defaulted to e2e)")
     parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
     parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT
     parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
     args = parser.parse_args()
-    parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
     #NOTE: SETS DATA PRECISION BEFORE THE MODEL IS LOADED
     if args.precision == "fp32":
         config.DTYPE = torch.float32
