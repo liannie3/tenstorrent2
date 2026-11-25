@@ -78,10 +78,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
     parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT
     parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
-    parser.add_argument("--optimization", choices = ["inductor", "aot_eager"], default = "inductor", help = "determines torch.compile backend, aot_eager = no fusion / no Triton optimization (defaulted to inductor)") #set level of compile time optimization
+    parser.add_argument("--optimization", choices = ["inductor", "aot_eager", "eager"], default = "inductor", help = "determines torch.compile backend, aot_eager = no fusion / no Triton optimization (defaulted to inductor)") #set level of compile time optimization via compilation backend tuning
     args = parser.parse_args()
     #NOTE: SET BEFORE MODEL IS LOADED AND COMPILED
-    config.COMPILE_BACKEND = args.backend 
+    config.COMPILE_BACKEND = args.optimization 
     #NOTE: SETS DATA PRECISION BEFORE THE MODEL IS LOADED
     if args.precision == "fp32":
         config.DTYPE = torch.float32

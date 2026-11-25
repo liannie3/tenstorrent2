@@ -194,7 +194,7 @@ def compile_stages(model):
     #stops torch.compile's default behaviour of swapping in a generic any-batch-size graph once it sees a second batch size
     #NOTE: (hardware_substages runs batch 25 and then batch 1). Use the same setting on the TT-XLA side
     for name, fn in (("normalize", normalize_layout), ("backbone", backbone_fn), ("neck", neck_fn), ("head", head_fn)):
-        compiled[name] = torch.compile(fn, mode = "default", backend = "inductor", dynamic = False)
+        compiled[name] = torch.compile(fn, backend = config.COMPILE_BACKEND, dynamic = False)
 
     # NOTE: torch.compile by default is lazy, meaning  nothing compiles until a stage's first call (the warmup in run_pipeline), 
             #first call so that call takes seconds to minutes. Inductor caches what it builds on disk, so later runs start faster
