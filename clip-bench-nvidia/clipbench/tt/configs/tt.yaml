@@ -13,7 +13,7 @@ run:
   device: tt                              # informational only -- the card is picked by device_id
   device_id: 0                            # which card ttnn.open_device opens
   precision: bf16                         # tt_clip/weights.py casts every weight to bfloat16
-  xla: true                               # True: model compiled using XLA, False: ported model from tt_clip
+  xla: true                               # True: model compiled using XLA (results in xla/), False: ported model from tt_clip (ttnn/)
   l1_small_size: 8192                     # L1 reserved for conv2d (same as tt_clip/device.py)
   trace_region_size: 67108864             # 64 MiB of DRAM for the Metal traces gpu_pure_latency replays
   trace: true                             # false = time gpu_pure_latency eagerly (host dispatch included)

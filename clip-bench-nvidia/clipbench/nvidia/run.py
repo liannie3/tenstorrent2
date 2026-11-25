@@ -13,8 +13,8 @@
 
     python -m clipbench.nvidia.run --profile jetson
 
-Runs four tests, each into its own folder of one dated run folder,
-analysis/results/nvidia/benchmark_<M-D-YY>/ (benchmark_<M-D-YY>_cudagraph with cuda_graph: true):
+Runs four tests, each into its own folder of
+analysis/results/nvidia/benchmark_<M-D-YY>/eager/ (cudagraph/ with cuda_graph: true):
 
   cpu_latency    perf_counter on all four stages. Host time throughout, so
                  encode and project read launch cost, not GPU time.
@@ -83,10 +83,10 @@ def main(argv=None):
     config = cfg.load_config(args.profile)
     run = config['run']
 
-    ## One folder per day. Graphed runs get their own so they never overwrite
-    ## eager ones. Set here so deep_metrics (and the nsys child) see the same path.
+    ## One folder per day, then eager/ or cudagraph/ so the two never overwrite
+    ## each other. Set here so deep_metrics (and the nsys child) see the same path.
     run_dir = cfg.use_dated_results_dir(
-        config, '_cudagraph' if run.get('cuda_graph', False) else '')
+        config, 'cudagraph' if run.get('cuda_graph', False) else 'eager')
 
     ## Make sure the run is on an nvidia device
     if run['target'] != 'nvidia':

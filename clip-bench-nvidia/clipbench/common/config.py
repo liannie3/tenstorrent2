@@ -34,14 +34,15 @@ PATH_KEYS = (('data', 'path'), ('parity', 'golden_path'), ('output', 'results_di
 RUN_DIR_ENV = 'CLIPBENCH_RUN_DIR'
 
 
-## Points output.results_dir at one folder per day, e.g. analysis/results/nvidia/benchmark_11-25-26.
-## suffix tells apart runs that must not overwrite each other (e.g. '_cudagraph').
-def use_dated_results_dir(config, suffix=''):
+## Points output.results_dir at one folder per day, then one per model variant,
+## e.g. analysis/results/tt/benchmark_11-25-26/xla. variant keeps runs of the same
+## day that must not overwrite each other apart (xla / ttnn, eager / cudagraph).
+def use_dated_results_dir(config, variant):
     run_dir = os.environ.get(RUN_DIR_ENV)
     if not run_dir:
         today = date.today()
         run_dir = str(Path(config['output']['results_dir']) /
-                      f'benchmark_{today.month}-{today.day}-{today.year % 100}{suffix}')
+                      f'benchmark_{today.month}-{today.day}-{today.year % 100}' / variant)
     config['output']['results_dir'] = run_dir
     return Path(run_dir)
 

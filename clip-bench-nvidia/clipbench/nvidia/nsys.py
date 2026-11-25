@@ -10,7 +10,7 @@
 
 nvidia/run.py runs this itself. To redo it on an existing capture:
 
-    python -m clipbench.nvidia.nsys analysis/results/nvidia/benchmark_11-25-26/deep_metrics/nsys_capture.nsys-rep
+    python -m clipbench.nvidia.nsys analysis/results/nvidia/benchmark_11-25-26/eager/deep_metrics/nsys_capture.nsys-rep
 """
 
 import argparse

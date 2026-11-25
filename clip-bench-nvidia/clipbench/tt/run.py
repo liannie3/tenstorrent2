@@ -8,8 +8,8 @@
 
 """Tenstorrent runner.
 
-Tests, each into its own folder of one dated run folder,
-analysis/results/tt/benchmark_<M-D-YY>/ (running again the same day overwrites it):
+Tests, each into its own folder of analysis/results/tt/benchmark_<M-D-YY>/xla/
+(ttnn/ with run.xla false). Running the same model again the same day overwrites it:
 
   e2e_latency   perf_counter per frame and per sub-test, one sync per frame.
                 python -m clipbench.tt.run --profile tt
@@ -20,7 +20,7 @@ analysis/results/tt/benchmark_<M-D-YY>/ (running again the same day overwrites i
 
   tracy_stage   same loop and ranges as NVIDIA's nvtx_stats, as Tracy zones.
                 No CSVs; read the .tracy file. Needs run.xla false; launch under tracy:
-                TT_METAL_PROFILER_PROGRAM_SUPPORT_COUNT=5000 python -m tracy -r -p --sync-host-device -o analysis/results/tt/benchmark_$(date +%-m-%-d-%y)/tracy_stage -m clipbench.tt.run --test tracy_stage
+                TT_METAL_PROFILER_PROGRAM_SUPPORT_COUNT=5000 python -m tracy -r -p --sync-host-device -o analysis/results/tt/benchmark_$(date +%-m-%-d-%y)/ttnn/tracy_stage -m clipbench.tt.run --test tracy_stage
 
 hardware_perf and tracy_stage only run when asked for with --test.
 """
@@ -85,8 +85,9 @@ def main(argv=None):
     config = cfg.load_config(args.profile)
     run = config['run']
 
-    ## One folder per day, e.g. analysis/results/tt/benchmark_11-17-26
-    run_dir = cfg.use_dated_results_dir(config)
+    ## One folder per day, then xla/ or ttnn/ (the ported model) so the two
+    ## never overwrite each other, e.g. analysis/results/tt/benchmark_11-17-26/xla
+    run_dir = cfg.use_dated_results_dir(config, 'xla' if run.get('xla', False) else 'ttnn')
 
     ## Make sure the run is on a Tenstorrent device
     if run['target'] != 'tenstorrent':
@@ -112,7 +113,7 @@ def main(argv=None):
         raise SystemExit('no images found - check data.path and data.view_order in '
                          f"clipbench/common/configs/base.yaml ({config['data']['path']})")
 
-    ## Input check (FSR 3.2.5.1), before the card is opened. The processor is
+    ## Input validation check (FSR 3.2.5.1), before the card is opened. The processor is
     ## CPU-only, so it loads here rather than with the weights.
     processor = model_lib.load_processor(config)
     validate.require_inputs(all_views, processor)
