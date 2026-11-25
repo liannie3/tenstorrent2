@@ -61,9 +61,9 @@ if missed_borderline > 0:
 
 #VALIDATION CHECK
 if round(100 * found / total_golden, 1) >= 95:
-    print(f"    ===Golden file accuracy validation check PASSED!===\n   ===Expected 95% accuracy, actual: {round(100 * found / total_golden, 1)}===")
+    print(f"    ===Golden file accuracy validation check PASSED!===\n   ===Expected 95% accuracy, actual: {round(100 * found / total_golden, 1)}%===")
 else:
-    print(f"    ===Golden file accuracy validation check FAILED!=== \n  ===Expected 95% accuracy, actual: {round(100 * found / total_golden, 1)}===")
+    print(f"    ===Golden file accuracy validation check FAILED!=== \n   ===Expected 95% accuracy, actual: {round(100 * found / total_golden, 1)}%===")
 
 if round(conf_diff_sum / found, 5) <= 0.01:
     print(f"    ===Golden file average confidence difference on matched boxes check PASSED!===\n    ===Expected confidence difference below 0.01, actual: {round(conf_diff_sum / found, 5)}===")
