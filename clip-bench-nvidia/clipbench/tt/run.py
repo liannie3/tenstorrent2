@@ -20,8 +20,8 @@ output.results_dir/benchmark_<M-D-YY> (analysis/results/tt/benchmark_11-17-26/..
   hardware_perf hw_monitor over the same sweep. No stage timings; the loop is there
                 to load the card while temperature, power and voltage are sampled.
 
-  tracy_stage   host perf_counter stages + device signposts, one batch per frame,
-                double-buffered. Needs run.xla false; launch under tracy:
+  tracy_stage   same loop and ranges as NVIDIA's nvtx_stats, as Tracy zones.
+                No CSVs; read the .tracy file. Needs run.xla false; launch under tracy:
                 python -m tracy -r -p -o analysis/results/tt/tracy -m clipbench.tt.run --test tracy_stage
 
 hardware_perf and tracy_stage only run when asked for with --test.
@@ -162,7 +162,7 @@ def main(argv=None):
 
             out_dir = results_dir / test_name
             print('\nmanifest:', write_manifest(config, images_by_views, out_dir / 'manifest.json'))
-            for stage, path in write_stage_csvs(timings, out_dir).items():
+            for stage, path in write_stage_csvs(timings, out_dir).items():      # none for tracy_stage
                 print(f'{stage:>10}:', path)
     finally:
         model_lib.close_device()
