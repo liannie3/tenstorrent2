@@ -43,6 +43,9 @@ TEST_NAMES = ('e2e_latency', 'hardware_perf', 'tracy_stage')
 DEFAULT_TESTS = ['e2e_latency']     # hardware_perf runs on its own via --test
 
 
+TRACY_WARMUP_ITERS = 2      # first pass compiles, the second confirms the program cache is hit
+
+
 ## Warmup loop for each subtest. The first pass also compiles every kernel.
 ## profiling: empty the device profiler buffers after every pass so they don't overflow
 def warmup_loop(config, encoder, processor, projector, views_paths, iterations, profiling=False):
@@ -126,6 +129,12 @@ def main(argv=None):
         projector = model_lib.load_projector(config, encoder.vision_width)     # 1024 for ViT-L
         print('model loaded', flush=True)
 
+        ## Empty the device profiler buffers of the weight-load ops before the first forward pass
+        if 'tracy_stage' in selected:
+            import ttnn
+            model_lib.synchronize()
+            ttnn.ReadDeviceProfiler(model_lib.tt_device.get_device())
+
         warmup_iters = run.get('warmup_iters', 0)
 
         ## 5. One test at a time, one sub-test per view count
@@ -140,9 +149,12 @@ def main(argv=None):
                 views_paths = data.load_views(config, views)
                 print(f'\n=== sub-test: {data.num_frames(views_paths)} frames x '
                       f'{views} views ===')
-                print(f'  warmup      : {warmup_iters} iters...', flush=True)
-                warmup_loop(config, encoder, processor, projector, views_paths, warmup_iters,
-                            profiling=(test_name == 'tracy_stage'))
+                ## Under tracy every warmup pass is followed by a slow profiler read, so keep it short
+                profiling = test_name == 'tracy_stage'
+                iters = min(warmup_iters, TRACY_WARMUP_ITERS) if profiling else warmup_iters
+                print(f'  warmup      : {iters} iters...', flush=True)
+                warmup_loop(config, encoder, processor, projector, views_paths, iters,
+                            profiling=profiling)
                 images_seen = run_subtest(
                     config, encoder, processor, projector, views_paths, views, timings)
                 images_by_views[views] = images_seen

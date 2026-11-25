@@ -120,12 +120,16 @@ class VisionTransformer:
         # Unflatten: [1, 1, N*H_out*W_out, C_out] -> [N, num_patches, embed_dim]
         # where num_patches = H_out * W_out = (336/14)^2 = 576
 
-        x = ttnn.reshape(x, (x.shape[0], x.shape[1] * x.shape[2], x.shape[3]))
+        # UPDATED: split the batch back out. conv2d folds it into dim 2, so using x.shape[0] (always 1)
+        # merged every image into one long sequence for batch > 1
+        x = ttnn.reshape(x, (batch_size, x.shape[2] // batch_size, x.shape[3]))
 
         # Step 5: Prepare the [CLS] token (class embedding)
         # ViT prepends a learnable class token to the sequence of patch embeddings
-        # Reshape class token: [embed_dim] -> [batch_size, 1, embed_dim]
-        class_embedding = ttnn.reshape(self.class_embedding, (x.shape[0], 1, x.shape[-1]))
+        # Reshape class token: [embed_dim] -> [1, 1, embed_dim], then one copy per image
+        class_embedding = ttnn.reshape(self.class_embedding, (1, 1, x.shape[-1]))
+        if batch_size > 1:
+            class_embedding = ttnn.repeat(class_embedding, ttnn.Shape([batch_size, 1, 1]))
 
 
         # Step 6: Prepare tensors for concatenation
