@@ -1,10 +1,12 @@
+import os
+os.environ["TT_RUNTIME_TRACE_REGION_SIZE"] = "10000000" #needed for enable_trace, must be set BEFORE torch_xla is imported anywhere
 from pathlib import Path
 import sys
 import argparse #pass command line arguments to script to decide which runs to perform
 
 from ultralytics import YOLO
 import torch_xla.runtime as xr #used to pick the bh p150a card as the xla (i.e. accelerated linear algebra) device
-
+import torch_xla #used to set the compiler options (optimization level, trace)
 import config
 from hardware import hardware_run_pipeline, hardware_substages, identify_monitor
 
@@ -31,12 +33,17 @@ def load_image_path(img_dir):
     #return file paths of only valid file types
     return sorted(p for p in img_dir.iterdir() if p.suffix.lower() in config.IMG_FORMATS)
     
-def main(setting, img_dir, batch_size : int = 1):
-    xr.set_device_type("TT") #pytorch xla defaults to run on host as device, so select TT card as device before model
+def main(setting, img_dir, batch_size : int = 1, step : int = 1):
     img_paths = load_image_path(img_dir)
+    img_paths = img_paths[::step] #NOTE: used for demo to exe time covering entire dataset
+                                                 #      every nth image, so a step of 4 runs 101/404 imgs through
+                                                 #      superior to simple subset of imgs since nu scences db are in order and some parts of db could be less dense w/ objs
     model = load_model()
     results = None
-        
+    if setting in ("e2e", "holistic"):
+        print(f"    PASS 0: End to End latency (asynchronous capturing total host time per batch)  ")
+        config.SUBSTEP_TIMING = False
+        results = run_pipeline(model, img_paths, batch_size, config.DEVICE, "e2e")     
     if setting in ("latency", "holistic", "profile"):
         print(f"   PASS 1: stage wall times only (synchronous profiling)   ")
         config.SUBSTEP_TIMING = False
@@ -62,8 +69,14 @@ def main(setting, img_dir, batch_size : int = 1):
     return results
     
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("setting", choices = ["latency", "profile", "holistic", "hardware"] )
-    parser.add_argument("batch_size", type = int, choices = [1, 2, 4, 8, 16] )
+    parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
+    parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"], default = "latency", help = "determines what setting harness runs under (defaulted to latency)")
+    parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
+    parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
+    parser.add_argument("--optimization", type = int, choices = [0, 1, 2], default = 0, help = "determines level of TT-XLA compiler optimization (defaulted to 0)")
+    parser.add_argument("--trace", action = "store_true", help = "enable TT runtime trace")
     args = parser.parse_args()
-    main(args.setting, config.IMG_DIR, args.batch_size)
+    xr.set_device_type("TT") #pytorch xla defaults to run on host as device, so select TT card as device before model
+    torch_xla.set_custom_compile_options({"optimization_level": args.optimization, "enable_trace": "true" if args.trace else "false"})
+    print(f"   TT-XLA optimization level {args.optimization}, trace {'on' if args.trace else 'off'}")
+    main(args.setting, config.IMG_DIR, args.batch_size, args.step)
