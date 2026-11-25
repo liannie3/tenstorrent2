@@ -23,6 +23,9 @@ from .. import nsys as nsys_report
 from ..schema import NSYS_ENV_GUARD, merge_nvtx_column, under_nsys
 
 
+MAX_FRAMES = 2          # Frames per sub-test under nsys. Same as TT's tracy_stage.py, so both profilers capture the same work
+
+
 ## Ranges are this test's only measurement, so no NVTX means nothing to record
 def require_nvtx():
     try:
@@ -57,7 +60,7 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
     num_frames = data.num_frames(views_paths)                      # Iterations available, set by the shortest view
     if max_frames is not None:
         num_frames = min(num_frames, max_frames)
-
+    num_frames = min(num_frames, MAX_FRAMES)                        # same frame count as TT's tracy_stage
 
     push('subtest', views, -1)                        # Subtest: NVTX Push
 
