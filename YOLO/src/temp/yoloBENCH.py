@@ -12,10 +12,6 @@ def main():
 	print("NVIDIA Tensor RT export format"); print()
 	benchmark(model = "yolov8n.pt", data = "coco8.yaml", imgsz = 640, device = device, format = nvidia_format)
 
-	print("BASELINE export format of torchscrpit"); print()
-	benchmark(model = "yolov8n.pt", data = "coco8.yaml", imgsz = 640, device = device, format = unbiased_format)
-
-
 
 
 if __name__ == "__main__":

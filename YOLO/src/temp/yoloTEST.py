@@ -14,7 +14,7 @@ def displayResults(testResults1, filename):
                 print(masks)
                 print(probs)
                 print(keypoints)
-                result.save(filename = "result_images/" + filename)
+                result.save(filename = "output_images/" + filename)
 
 def main():
         setting = ""
@@ -22,7 +22,7 @@ def main():
                 setting = sys.argv[1]
         model = YOLO("yolov8n.pt")
 
-        path = "test_images/"
+        path = "input_images/"
         #best practice to robustly define the device
         #so it only attempts to utalize cuda if a cuda gpu is present
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
