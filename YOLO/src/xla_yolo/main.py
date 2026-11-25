@@ -1,11 +1,9 @@
-import os
-os.environ["TT_RUNTIME_TRACE_REGION_SIZE"] = "10000000" #needed for enable_trace, must be set BEFORE torch_xla is imported anywhere
 from pathlib import Path
 import sys
 import argparse #pass command line arguments to script to decide which runs to perform
 from ultralytics import YOLO
 import torch_xla.runtime as xr #used to pick the bh p150a card as the xla (i.e. accelerated linear algebra) device
-import torch_xla #used to set the compiler options (optimization level, trace)
+import torch_xla #used to set the compiler options (optimization level)
 import config
 from hardware import hardware_run_pipeline, hardware_substages, identify_monitor
 
@@ -74,9 +72,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
     parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
     parser.add_argument("--optimization", type = int, choices = [0, 1, 2], default = 0, help = "determines level of TT-XLA compiler optimization (defaulted to 0)")
-    parser.add_argument("--trace", action = "store_true", help = "enable TT runtime trace")
     args = parser.parse_args()
     xr.set_device_type("TT") #pytorch xla defaults to run on host as device, so select TT card as device before model
-    torch_xla.set_custom_compile_options({"optimization_level": args.optimization, "enable_trace": "true" if args.trace else "false"})
-    print(f"   TT-XLA optimization level {args.optimization}, trace {'on' if args.trace else 'off'}")
+    torch_xla.set_custom_compile_options({"optimization_level": args.optimization})
+    print(f"   TT-XLA optimization level {args.optimization}")
     main(args.setting, config.IMG_DIR, args.batch_size, args.step)
