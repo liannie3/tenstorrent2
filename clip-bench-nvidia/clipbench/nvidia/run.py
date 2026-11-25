@@ -13,33 +13,36 @@
 
     python -m clipbench.nvidia.run --profile jetson
 
-Runs four tests, each into its own subdirectory of output.results_dir:
+Runs four tests, each into its own folder of one dated run folder,
+analysis/results/nvidia/benchmark_<M-D-YY>/ (benchmark_<M-D-YY>_cudagraph with cuda_graph: true):
 
-  cpu_pure_latency  perf_counter on all four stages. Host time throughout, so
-                    encode and project read launch cost, not GPU time.
-  gpu_pure_latency  CUDA events on encode and project. GPU execution time.
-                    decode and preprocess are absent -- they launch no kernels.
-  hardware_perf     tegrastats over the same sweep. No stage timings; the loop
-                    is there to load the board while power, clocks and temps
-                    are sampled.
-  nvtx_stats        the same pipeline in NVTX ranges, collected by relaunching
-                    this module under `nsys profile`. Merged into
-                    cpu_pure_latency/ as an nvtx_ms column, since an NVTX range
-                    is a host clock. CUPTI adds overhead to every kernel launch,
-                    which is why it cannot share a process with the others.
+  cpu_latency    perf_counter on all four stages. Host time throughout, so
+                 encode and project read launch cost, not GPU time.
+  gpu_latency    CUDA events on encode and project. GPU execution time.
+                 decode and preprocess are absent -- they launch no kernels.
+  hardware_perf  tegrastats over the same sweep. No stage timings; the loop
+                 is there to load the board while power, clocks and temps
+                 are sampled.
+  deep_metrics   the same pipeline in NVTX ranges, collected by relaunching
+                 this module under `nsys profile`. The capture stays in
+                 deep_metrics/; its ranges are merged into cpu_latency/ as an
+                 nvtx_ms column, since an NVTX range is a host clock. CUPTI adds
+                 overhead to every kernel launch, which is why it cannot share
+                 a process with the others.
 
 There is nothing to choose: one invocation runs all four. The child nsys
-launches is the one with NSYS_ENV_GUARD set, and that child runs nvtx_stats.
+launches is the one with NSYS_ENV_GUARD set, and that child runs deep_metrics.
+Running twice on the same day overwrites that day's folder.
 """
 
 import argparse
 import warnings
-from pathlib import Path
 
 import torch
 
 from ..common import config as cfg
 from ..common import data
+from ..common import validate
 from . import model_nvidia as model_lib
 from .benchmark_tests import (cpu_pure_latency, deep_metrics, gpu_pure_latency,
                               hardware_perf)
@@ -80,10 +83,10 @@ def main(argv=None):
     config = cfg.load_config(args.profile)
     run = config['run']
 
-    ## Graphed runs get their own results dir so they never overwrite eager ones.
-    ## Set here so deep_metrics (and the nsys child) see the same path.
-    if run.get('cuda_graph', False):
-        config['output']['results_dir'] += '_cudagraph'
+    ## One folder per day. Graphed runs get their own so they never overwrite
+    ## eager ones. Set here so deep_metrics (and the nsys child) see the same path.
+    run_dir = cfg.use_dated_results_dir(
+        config, '_cudagraph' if run.get('cuda_graph', False) else '')
 
     ## Make sure the run is on an nvidia device
     if run['target'] != 'nvidia':
@@ -103,9 +106,10 @@ def main(argv=None):
 
     ## 2. Every test, hardcoded. Which ones this process runs is decided in the
     ## loop at step 5, not here.
-    tests = {'cpu_pure_latency': cpu_pure_latency.run,
-             'gpu_pure_latency': gpu_pure_latency.run,
-             'nvtx_stats': deep_metrics.run,
+    ## Keys are the results folder names.
+    tests = {'cpu_latency': cpu_pure_latency.run,
+             'gpu_latency': gpu_pure_latency.run,
+             'deep_metrics': deep_metrics.run,
              'hardware_perf': hardware_perf.run}
 
     ## Missing NVTX is a flag, not a failure -- every other test still runs
@@ -114,7 +118,7 @@ def main(argv=None):
         nvtx_ok = True
     except RuntimeError as exc:
         nvtx_ok = False
-        warnings.warn(f'NVTX unavailable, so nvtx_stats is skipped: {exc}',
+        warnings.warn(f'NVTX unavailable, so deep_metrics is skipped: {exc}',
                       RuntimeWarning, stacklevel=2)
 
     print(f"profile: {config['profile']}  device: {run['device']}  "
@@ -134,21 +138,26 @@ def main(argv=None):
         raise SystemExit('no images found - check data.path and data.view_order in '
                          f"clipbench/common/configs/base.yaml ({config['data']['path']})")
 
+    ## Input check (FSR 3.2.5.1) before anything is timed. The nsys child skips
+    ## it -- the parent already checked the same images.
+    if not under_nsys():
+        validate.require_inputs(all_views, processor)
+
     ## 5. One test at a time, one sub-test per view count. Each test gets its
     ## own buffer and its own results subdirectory, so the stage names stay the
     ## same everywhere without one test overwriting another's CSVs.
     ##
     ## Warmup runs here rather than inside the tests, so it is outside every
     ## test's timed region by construction.
-    results_dir = Path(config['output']['results_dir'])
+    manifests_ok = True
 
     for test_name, run_subtest in tests.items():
-        ## nvtx_stats records nothing unless nsys is collecting, and the other
+        ## deep_metrics records nothing unless nsys is collecting, and the other
         ## three must not pay CUPTI overhead. So the child nsys launches runs
         ## that one and only that one, and the parent runs the rest.
-        if (test_name == 'nvtx_stats') != under_nsys():
+        if (test_name == 'deep_metrics') != under_nsys():
             continue
-        if test_name == 'nvtx_stats' and not nvtx_ok:
+        if test_name == 'deep_metrics' and not nvtx_ok:
             continue
 
         print(f'\n########## {test_name} ##########')
@@ -174,9 +183,10 @@ def main(argv=None):
         if under_nsys():
             continue
 
-        out_dir = results_dir / test_name
-        print('\nmanifest:', write_manifest(config, images_by_views,
-                                            out_dir / 'manifest.json'))
+        out_dir = run_dir / test_name
+        manifest_path = write_manifest(config, images_by_views, out_dir / 'manifest.json')
+        print('\nmanifest:', manifest_path)
+        manifests_ok &= validate.report_manifest(manifest_path, images_by_views)
         for stage, path in write_stage_csvs(timings, out_dir).items():
             print(f'{stage:>10}:', path)
 
@@ -184,19 +194,33 @@ def main(argv=None):
         return 0
 
     ## 7. Profiled pass. Relaunches this module under nsys; that child runs
-    ## nvtx_stats alone at step 5, and its ranges become the nvtx_ms column.
+    ## deep_metrics alone at step 5, and its ranges become the nvtx_ms column.
     ##
-    ## The column goes into cpu_pure_latency/, not gpu_pure_latency/: an NVTX
-    ## range is a host clock, so nvtx_ms is the same quantity perf_counter
-    ## measures and belongs beside it.
-    if not nvtx_ok:
-        return 0
+    ## The column goes into cpu_latency/, not gpu_latency/: an NVTX range is a
+    ## host clock, so nvtx_ms is the same quantity perf_counter measures and
+    ## belongs beside it.
+    if nvtx_ok:
+        rep_path = deep_metrics.capture_under_nsys(config, ['--profile', args.profile])
+        if rep_path is not None:
+            deep_metrics.merge_nvtx(rep_path, run_dir / 'cpu_latency')
 
-    rep_path = deep_metrics.capture_under_nsys(config, ['--profile', args.profile])
-    if rep_path is not None:
-        deep_metrics.merge_nvtx(rep_path, results_dir / 'cpu_pure_latency')
+    ## 8. Every test's files are in their folder (FSR 3.2.8). deep_metrics is
+    ## expected even when NVTX or nsys was missing -- a run without it is incomplete.
+    results_ok = validate.report_results(run_dir, expected_results(run['views']))
 
-    return 0
+    return 0 if manifests_ok and results_ok else 1
+
+
+## What each test must leave in its folder of the run folder
+def expected_results(views_list):
+    return {
+        'cpu_latency': ['manifest.json', *(f'{stage}.csv' for stage in
+                        ('decode', 'preprocess', 'encode', 'project', 'subiter', 'iter', 'subtest'))],
+        'gpu_latency': ['manifest.json', *(f'{stage}.csv' for stage in
+                        ('encode', 'project', 'subiter', 'iter', 'subtest'))],
+        'hardware_perf': ['manifest.json', *(f'tegrastats_v{views}.log' for views in views_list)],
+        'deep_metrics': ['nsys_capture.nsys-rep'],
+    }
 
 
 ## Footnote on preprocess: data.preprocess uploads from pinned memory with

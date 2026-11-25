@@ -55,9 +55,12 @@ def check(pccs, golden):
     all_run = not missing
 
     print(f'\n=== parity vs golden (mean PCC > {MEAN_PCC_THRESHOLD}) ===')
-    print(f'images run  : {len(pccs)}/{len(expected)}  -> {"PASS" if all_run else "FAIL"}')
-    for key in sorted(missing)[:5]:
-        print(f'  missing   : {key}')
+
+    ## Only shown when something is wrong -- a missing image still fails the run
+    if missing:
+        print(f'images run  : {len(pccs)}/{len(expected)}  -> FAIL')
+        for key in sorted(missing)[:5]:
+            print(f'  missing   : {key}')
 
     pcc_ok = True
     for name in OUTPUTS:

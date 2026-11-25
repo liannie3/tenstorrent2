@@ -10,7 +10,7 @@
 
 nvidia/run.py runs this itself. To redo it on an existing capture:
 
-    python -m clipbench.nvidia.nsys analysis/results/jetson/sweep.nsys-rep
+    python -m clipbench.nvidia.nsys analysis/results/nvidia/benchmark_11-25-26/deep_metrics/nsys_capture.nsys-rep
 """
 
 import argparse
@@ -98,7 +98,8 @@ def main(argv=None):
     parser.add_argument('--report', default=NVTX_REPORT,
                         help=f'nsys stats report name (default: {NVTX_REPORT})')
     parser.add_argument('--csv-dir', default=None,
-                        help="stage CSVs to merge into (default: the capture's own directory)")
+                        help='stage CSVs to merge into (default: cpu_latency/ beside the '
+                             "capture's deep_metrics/ folder)")
     args = parser.parse_args(argv)
 
     csv_path = export_ranges(args.capture, args.report)
@@ -108,7 +109,7 @@ def main(argv=None):
     if not timings:
         raise SystemExit(f'no ranges matching {RANGE_PATTERN.pattern} - was --trace=nvtx set?')
 
-    csv_dir = Path(args.csv_dir) if args.csv_dir else Path(args.capture).parent
+    csv_dir = Path(args.csv_dir) if args.csv_dir else Path(args.capture).parent.parent / 'cpu_latency'
     merged = merge_nvtx_column(timings, csv_dir)
     if not merged:
         raise SystemExit(f'no stage CSVs in {csv_dir} to merge into')

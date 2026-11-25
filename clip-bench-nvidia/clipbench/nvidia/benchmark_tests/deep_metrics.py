@@ -121,10 +121,10 @@ def should_capture():
 ## Returns the .nsys-rep, or None if nsys is not installed.
 def capture_under_nsys(config, child_args):
 
-    ## Gets the results path which is defined in jetson.yaml
-    results_dir = Path(config['output']['results_dir'])
-    results_dir.mkdir(parents=True, exist_ok=True)
-    capture = results_dir / 'nsys_capture'                       # Makes the folder for the output nsys data
+    ## The run's dated folder (run.py); the capture goes in its deep_metrics/ folder
+    out_dir = Path(config['output']['results_dir']) / 'deep_metrics'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    capture = out_dir / 'nsys_capture'                           # nsys adds .nsys-rep
 
     #### IMPORTANT: DETERMINES THE FLAGS FOR NSYS PROFILE. SEE NSYS DOCS FOR MORE INFO ####
     ## nsys profile <flags> <command>. Everything from sys.executable on is the
@@ -141,6 +141,7 @@ def capture_under_nsys(config, child_args):
 
     env = dict(os.environ)                          # Builds the env the child process will run on
     env[NSYS_ENV_GUARD] = '1'                       # stops the child relaunching too
+    env[cfg.RUN_DIR_ENV] = config['output']['results_dir']    # child writes into this run's folder
 
     ## Starts child process
     print('capturing NVTX ranges under nsys\n')

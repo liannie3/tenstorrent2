@@ -8,33 +8,30 @@
 
 """Tenstorrent runner.
 
-    python -m clipbench.tt.run --profile tt                          # e2e_latency
-    python -m clipbench.tt.run --profile tt --test hardware_perf     # hardware sampling, on its own
-    python -m clipbench.tt.run --profile tt --test e2e_latency       # any one test (repeatable)
-
-Tests, each into its own subdirectory of
-output.results_dir/benchmark_<M-D-YY> (analysis/results/tt/benchmark_11-17-26/...):
+Tests, each into its own folder of one dated run folder,
+analysis/results/tt/benchmark_<M-D-YY>/ (running again the same day overwrites it):
 
   e2e_latency   perf_counter per frame and per sub-test, one sync per frame.
-                No profiler attached -- these are the wall-clock numbers to quote.
+                python -m clipbench.tt.run --profile tt
+
   hardware_perf hw_monitor over the same sweep. No stage timings; the loop is there
                 to load the card while temperature, power and voltage are sampled.
+                python -m clipbench.tt.run --profile tt --test hardware_perf
 
   tracy_stage   same loop and ranges as NVIDIA's nvtx_stats, as Tracy zones.
                 No CSVs; read the .tracy file. Needs run.xla false; launch under tracy:
-                python -m tracy -r -p -o analysis/results/tt/tracy -m clipbench.tt.run --test tracy_stage
+                TT_METAL_PROFILER_PROGRAM_SUPPORT_COUNT=5000 python -m tracy -r -p --sync-host-device -o analysis/results/tt/benchmark_$(date +%-m-%-d-%y)/tracy_stage -m clipbench.tt.run --test tracy_stage
 
 hardware_perf and tracy_stage only run when asked for with --test.
 """
 
 import argparse
-from datetime import date
-from pathlib import Path
 
 import torch
 
 from ..common import config as cfg
 from ..common import data
+from ..common import validate
 from . import model_tt as model_lib
 from .benchmark_tests import e2e_latency, hardware_perf
 from .schema import write_manifest, write_stage_csvs
@@ -88,10 +85,8 @@ def main(argv=None):
     config = cfg.load_config(args.profile)
     run = config['run']
 
-    ## One dated folder per run, e.g. analysis/results/tt/benchmark_11-17-26
-    today = date.today()
-    config['output']['results_dir'] = str(
-        Path(config['output']['results_dir']) / f'benchmark_{today.month}-{today.day}-{today.year % 100}')
+    ## One folder per day, e.g. analysis/results/tt/benchmark_11-17-26
+    run_dir = cfg.use_dated_results_dir(config)
 
     ## Make sure the run is on a Tenstorrent device
     if run['target'] != 'tenstorrent':
@@ -117,14 +112,16 @@ def main(argv=None):
         raise SystemExit('no images found - check data.path and data.view_order in '
                          f"clipbench/common/configs/base.yaml ({config['data']['path']})")
 
-    results_dir = Path(config['output']['results_dir'])
+    ## Input check (FSR 3.2.5.1), before the card is opened. The processor is
+    ## CPU-only, so it loads here rather than with the weights.
+    processor = model_lib.load_processor(config)
+    validate.require_inputs(all_views, processor)
 
     ## 4. Model pieces. The card must be open first -- weights go straight to it.
     print('\nopening device...', flush=True)
     model_lib.open_device(config)
     try:
         print('loading model + copying weights to the card...', flush=True)
-        processor = model_lib.load_processor(config)
         encoder = model_lib.load_encoder(config)
         projector = model_lib.load_projector(config, encoder.vision_width)     # 1024 for ViT-L
         print('model loaded', flush=True)
@@ -136,6 +133,7 @@ def main(argv=None):
             ttnn.ReadDeviceProfiler(model_lib.tt_device.get_device())
 
         warmup_iters = run.get('warmup_iters', 0)
+        manifests_ok = True     # any failed manifest check -> exit code 1
 
         ## 5. One test at a time, one sub-test per view count
         for test_name in selected:
@@ -160,14 +158,30 @@ def main(argv=None):
                 images_by_views[views] = images_seen
                 print(f'  images      : {images_seen}')
 
-            out_dir = results_dir / test_name
-            print('\nmanifest:', write_manifest(config, images_by_views, out_dir / 'manifest.json'))
+            out_dir = run_dir / test_name
+            manifest_path = write_manifest(config, images_by_views, out_dir / 'manifest.json')
+            print('\nmanifest:', manifest_path)
+            manifests_ok &= validate.report_manifest(manifest_path, images_by_views)
             for stage, path in write_stage_csvs(timings, out_dir).items():      # none for tracy_stage
                 print(f'{stage:>10}:', path)
     finally:
         model_lib.close_device()
 
-    return 0
+    ## Every selected test's files are in their folder (FSR 3.2.8)
+    expected = expected_results(run['views'])
+    results_ok = validate.report_results(run_dir, {t: expected[t] for t in selected})
+
+    return 0 if manifests_ok and results_ok else 1
+
+
+## What each test must leave in its folder of the run folder. tracy_stage's
+## .tracy file goes wherever `python -m tracy -o` points, so only its manifest is checked.
+def expected_results(views_list):
+    return {
+        'e2e_latency': ['manifest.json', 'iter.csv', 'subtest.csv'],
+        'hardware_perf': ['manifest.json', *(f'hw_v{views}.csv' for views in views_list)],
+        'tracy_stage': ['manifest.json'],
+    }
 
 
 if __name__ == '__main__':

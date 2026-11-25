@@ -12,7 +12,7 @@ run:
   target: nvidia                 # run with clipbench/nvidia/run.py -- CUDA event stage timing
   device: cuda                   
   precision: fp16                # data type
-  cuda_graph: false              # true = replay CUDA graphs (match tt.yaml trace: true); results go to results_dir + _cudagraph
+  cuda_graph: false              # true = replay CUDA graphs (match tt.yaml trace: true); results go to benchmark_<M-D-YY>_cudagraph
 
 output:
-  results_dir: analysis/results/jetson    # directory for result data
+  results_dir: analysis/results/nvidia    # one benchmark_<M-D-YY> folder per day goes inside
