@@ -54,6 +54,10 @@ def run(config, encoder, processor, projector, views_paths, views, timings):
     device = model_lib.tt_device.get_device()
     frames = list(data.iter_frames(views_paths))[:MAX_FRAMES]
 
+    ## Empty the profiler buffers of anything left from model load or the last sub-test
+    model_lib.synchronize()
+    ttnn.ReadDeviceProfiler(device)
+
     with torch.inference_mode():
 
         ## Warmup at this batch size (run.py's warmup is batch 1), then empty the profiler buffers

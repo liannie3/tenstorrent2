@@ -44,9 +44,12 @@ DEFAULT_TESTS = ['e2e_latency']     # hardware_perf runs on its own via --test
 
 
 ## Warmup loop for each subtest. The first pass also compiles every kernel.
-def warmup_loop(config, encoder, processor, projector, views_paths, iterations):
+## profiling: empty the device profiler buffers after every pass so they don't overflow
+def warmup_loop(config, encoder, processor, projector, views_paths, iterations, profiling=False):
     if iterations <= 0:
         return
+    if profiling:
+        import ttnn
 
     dtype = model_lib.resolve_dtype(config['run']['precision'])
     warm_frame = next(data.iter_frames(views_paths), ())   # frame 0 of every view
@@ -61,6 +64,9 @@ def warmup_loop(config, encoder, processor, projector, views_paths, iterations):
                 warm_outputs = encoder(warm_pixel_values, output_hidden_states=True)
                 warm_features = model_lib.select_image_features(warm_outputs, config)
                 projector(warm_features)
+                if profiling:
+                    model_lib.synchronize()
+                    ttnn.ReadDeviceProfiler(model_lib.tt_device.get_device())
 
     model_lib.synchronize()
 
@@ -135,7 +141,8 @@ def main(argv=None):
                 print(f'\n=== sub-test: {data.num_frames(views_paths)} frames x '
                       f'{views} views ===')
                 print(f'  warmup      : {warmup_iters} iters...', flush=True)
-                warmup_loop(config, encoder, processor, projector, views_paths, warmup_iters)
+                warmup_loop(config, encoder, processor, projector, views_paths, warmup_iters,
+                            profiling=(test_name == 'tracy_stage'))
                 images_seen = run_subtest(
                     config, encoder, processor, projector, views_paths, views, timings)
                 images_by_views[views] = images_seen
