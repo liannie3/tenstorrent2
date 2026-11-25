@@ -6,6 +6,7 @@ import argparse
 parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
 parser.add_argument("--iterations", type = int, choices = [1,2,3,4,5,6,7,8,9,10],  default = 5, help = "determines how many iterations are run (defaulted to 5)") #used to allow user tuning of noise reducton
 parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
+parser.add_argument("--accuracy", type = int, choices = [1,2,3,4,5,6,7,8,9,10],  default = 5, help = "determines the percent accuracy to validate against (defaulted to 5%%)") #used to allow user tuning accuracy threshold
 args = parser.parse_args()
 
 SRC_DIR = Path(__file__).parent.parent.parent #this file is in YOLO/src/valid/native_latency, 3 parents up is YOLO/src
@@ -78,26 +79,26 @@ for stage in native_times:
 
 total_diff = ( (harness_total-native_total)/ native_total) * 100
 print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {total_diff:>+7.1f}%")
-if abs(total_diff) > 5:
-    print(f"    ===Holistic Native latency validation check FAILED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+.1f}%")
+if abs(total_diff) > args.accuracy:
+    print(f"    ===Holistic Native latency validation check FAILED!\n    ===Expected no greater than {args.accuracy}% overall latency difference, actual: {total_diff:>+.1f}%")
 else:
-    print(f"    ===Holistic Native latency validation check PASSED!\n    ===Expected no greater than 5% overall latency difference, actual: {total_diff:>+.1f}%")
+    print(f"    ===Holistic Native latency validation check PASSED!\n    ===Expected no greater than {args.accuracy}% overall latency difference, actual: {total_diff:>+.1f}%")
 
 pre_diff = ( (harness_med["preprocess"]-native_med["preprocess"])/ native_med["preprocess"]) * 100 
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {pre_diff:>+7.1f}%")
-if abs(pre_diff) > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+.1f}%")
+if abs(pre_diff) > args.accuracy:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than {args.accuracy}% preprocess latency difference, actual: {pre_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% preprocess latency difference, actual: {pre_diff:>+.1f}%")
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than {args.accuracy}% preprocess latency difference, actual: {pre_diff:>+.1f}%")
 inf_diff = ( (harness_med["inference"]-native_med["inference"])/ native_med["inference"]) * 100
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {inf_diff:>+7.1f}%")
-if abs(inf_diff) > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+.1f}%")
+if abs(inf_diff) > args.accuracy:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than {args.accuracy}% inference latency difference, actual: {inf_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% inference latency difference, actual: {inf_diff:>+.1f}%")
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than {args.accuracy}% inference latency difference, actual: {inf_diff:>+.1f}%")
 post_diff = ( (harness_med["postprocess"]-native_med["postprocess"])/ native_med["postprocess"]) * 100
 #print(f"  {'TOTAL':<12} {native_total:>10.3f} {harness_total:>11.3f} {post_diff:>+7.1f}%")
-if abs(post_diff) > 5:
-    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+.1f}%")
+if abs(post_diff) > args.accuracy:
+    print(f"    ===Optional Substage Native latency validation check FAILED!\n    ===Expected no greater than {args.accuracy}% postprocess latency difference, actual: {post_diff:>+.1f}%")
 else:
-    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than 5% postprocess latency difference, actual: {post_diff:>+.1f}%")
+    print(f"    ===Optional Substage Native latency validation check PASSED!\n    ===Expected no greater than {args.accuracy}% postprocess latency difference, actual: {post_diff:>+.1f}%")
