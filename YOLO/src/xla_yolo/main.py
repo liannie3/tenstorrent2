@@ -3,7 +3,6 @@ os.environ["TT_RUNTIME_TRACE_REGION_SIZE"] = "10000000" #needed for enable_trace
 from pathlib import Path
 import sys
 import argparse #pass command line arguments to script to decide which runs to perform
-
 from ultralytics import YOLO
 import torch_xla.runtime as xr #used to pick the bh p150a card as the xla (i.e. accelerated linear algebra) device
 import torch_xla #used to set the compiler options (optimization level, trace)
@@ -12,7 +11,8 @@ from hardware import hardware_run_pipeline, hardware_substages, identify_monitor
 
 from run import run_pipeline, load_images
 from stages import compile_stages #sets up the torch.compiled gpu substages
-
+import warnings
+warnings.filterwarnings("ignore", category = FutureWarning) #hides tt_torch's _check_is_size deprecation spam, not real errors
 def load_model():
     model = YOLO(config.WEIGHTS).model.fuse().eval().to(config.DTYPE).to(config.DEVICE)
         #.model exposes the NN layers within the model (enables differentiation btw backbone, neck, and head within inference)
