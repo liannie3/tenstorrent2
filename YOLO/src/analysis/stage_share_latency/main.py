@@ -150,7 +150,7 @@ for batch in batches:
 #prints the average % of every substep (grouped by stage), times the unprofiled e2e time
 n = len(batches)
 bs = int(batch_size)
-pre_total = 0; inf_total = 0; post_total = 0
+stage_ms = {} #stage -> est. ms per image
 print(f"\n    RESULTS: batch {batch_size}, {n} batches, unprofiled e2e {e2e_ms:.3f} ms per batch ({e2e_step})    ")
 print(f"  {'STAGE':<16} {'SUBSTEP':<22} {'host ms':>8} {'overlap':>8} {'GPU ms':>8} {'avg %':>7} {'est. ms/img':>12}")
 for st in STAGES:
@@ -160,21 +160,13 @@ for st in STAGES:
         stage_pct += pct
         print(f"  {st:<16} {key[1]:<22} {avg(host[key]):>8.3f} {avg(overlaps[key]):>8.3f} {avg(gpu_t[key]):>8.3f} {pct:>7.2f} "
               f"{pct / 100 * e2e_ms / bs:>12.3f}")
-    print(f"  {st:<16} {'STAGE TOTAL':<22} {'':>8} {'':>8} {'':>8} {stage_pct:>7.2f} {stage_pct / 100 * e2e_ms / bs:>12.3f}")
-    if st == "preprocess":
-        pre_total = (stage_pct / 100) * e2e_ms / bs
-    elif st == "inference":
-        inf_total = (stage_pct / 100) * e2e_ms / bs
-    else:
-        pre_total = (stage_pct / 100) * e2e_ms / bs
+    stage_ms[st] = stage_pct / 100 * e2e_ms / bs #store this stage's est. ms per image
+    print(f"  {st:<16} {'STAGE TOTAL':<22} {'':>8} {'':>8} {'':>8} {stage_pct:>7.2f} {stage_ms[st]:>12.3f}")
 
-print(f"\n  MEAN PREPROCESS TIME: {pre_total:>12.3f} ms")
-print(f"  MEAN INFERENCE TIME: {pre_total:>12.3f} ms")
-print(f"  MEAN POSTPROCESS TIME: {pre_total:>12.3f} ms")
-
-print(f"  pre_rpocessing   TOTAL WALL TIME PER BATCH: {pre_total*bs:>12.3f}")
-print(f"  inference        TOTAL WALL TIME PER BATCH: {inf_total*bs:>12.3f}")
-print(f"  post_rpocessing  TOTAL WALL TIME PER BATCH: {post_total*bs:>12.3f}")
+#per image and per batch totals of every stage
+print()
+for st in STAGES:
+    print(f"  {st:<16} EST. TIME PER IMAGE {stage_ms[st]:>10.3f} ms   PER BATCH {stage_ms[st] * bs:>10.3f} ms")
 
 print(f"\n  NOTE: host / overlap / GPU ms are from the profiled run, per batch. overlap = host time while earlier GPU work still ran")
 print(f"        est. ms/img = avg % x unprofiled e2e per batch / batch size")
