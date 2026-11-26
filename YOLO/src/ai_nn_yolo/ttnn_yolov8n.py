@@ -12,6 +12,7 @@
 #   - the forward is split into backbone / neck / head so the harness can time each one, like the CUDA version
 #   - block sharding falls back to conv2d's own choice for layers too narrow to split across core columns
 
+import config
 import ttnn
 from ttnn_yolov8n_utils import determine_num_cores, get_core_grid_from_num_cores, ttnn_decode_bboxes
 
@@ -78,10 +79,12 @@ class TtConv:
         reshard_if_not_optimal=False,
         batch_size=1,
         core_count=None,
+        dram_slice=False,
     ):
         self.device = device
         self.parameters = parameters
         self.path = path
+        self.dram_slice = dram_slice  #NOTE: yolov8n port: True = let conv2d slice a DRAM input instead of loading it all into L1
         self.core_count = core_count
         self.input_params = input_params
         self.groups = groups
@@ -182,7 +185,9 @@ class TtConv:
             return_weights_and_bias=True,
             return_output_dim=True,
             dtype=ttnn.bfloat8_b if self.bfloat8 else ttnn.bfloat16,  #NOTE: yolov8n port: was always bfloat8_b
-            slice_config=ttnn.Conv2dL1FullSliceConfig,
+            #NOTE: yolov8n port: the original always used Conv2dL1FullSliceConfig (whole feature map in L1). None lets conv2d
+            #      pick DRAM slices itself, which the stem needs above batch ~4 at 384x640
+            slice_config=None if self.dram_slice else ttnn.Conv2dL1FullSliceConfig,
         )
 
         if self.is_detect_cv2:
@@ -672,6 +677,9 @@ class TtDetectionModel:
             act_block_h=True,
             deallocate_activation=True,
             batch_size=bs,
+            #NOTE: yolov8n port: the stem's input is the largest tensor in the model (batch x 384 x 640 x 16). Held in L1 with
+            #      its halo it needs ~260 MB at batch 16 (L1 is ~158 MB), so it's processed from DRAM in slices
+            dram_slice=config.STEM_DRAM_SLICE,
         )
         self.conv_1 = TtConv(
             device,

@@ -61,6 +61,8 @@ NUM_COMMAND_QUEUES = 1
 #      Every conv uses Conv2dL1FullSliceConfig (the whole feature map must fit in L1), which caps the batch size
 WEIGHTS_DTYPE = "bfp8"    #"bfp8" (yolov8x demo default: bfloat8_b weights AND activations) or "bf16" (more accurate, slower)
 MATH_FIDELITY = "lofi"    #"lofi" (yolov8x demo default, fastest), "hifi2", "hifi4" (most accurate)
+STEM_DRAM_SLICE = True    #True: the first conv reads its input from DRAM in slices (needed above batch ~4 at 384x640)
+                          #False: exactly like the yolov8x demo (whole input in L1); fine at batch 1-4, a bit faster
 
 #######################################################################################################################################################################
 #                        | | | |                                                                                                                                      #
