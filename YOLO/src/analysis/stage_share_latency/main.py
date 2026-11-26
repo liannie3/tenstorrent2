@@ -4,7 +4,7 @@ import argparse #cli args
 import subprocess
 from pathlib import Path #find paths relative to this script
 
-from helper import run, latest_e2e_ms, avg, cost
+from helper import run, latest_e2e_ms, avg, cost, latest_ops_csv, timed_loop, op_name, per_batch
 from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS, TRACY_FLAGS
 
 #TT version of the CUDA stage share analysis: finds the average percentage of each batch spent in every stage and substage
@@ -52,70 +52,6 @@ host_dir = BENCH_DIR / f"tracy_e2e_b{batch_size}_host" #tracy --no-device writes
 device_dir = BENCH_DIR / f"tracy_e2e_b{batch_size}" #tracy writes reports/<date>/ops_perf_results_<date>.csv in here
 host_log = host_dir / ".logs" / "tracy_ops_data.csv"
 
-#helper function that returns the newest ops report tracy wrote into device_dir
-def latest_ops_csv():
-    found = sorted(device_dir.glob("reports/**/ops_perf_results*.csv"), key = lambda p: p.stat().st_mtime)
-    if not found:
-        sys.exit(f"ERROR: NO ops_perf_results*.csv FOUND UNDER {device_dir}/reports (did tracy run with -r?)")
-    return found[-1]
-
-#helper function that keeps only the events inside the LAST timed loop (warmup batches aren't counted)
-#events: list of ("sp", name, ts) / ("op", ts, device ns) in time order
-def timed_loop(events, source):
-    starts = [i for i, e in enumerate(events) if e[0] == "sp" and e[1] == f"{TIMED_LOOP}_start"]
-    if not starts:
-        sys.exit(f"ERROR: NO {TIMED_LOOP}_start SIGNPOST FOUND IN {source}")
-    end = next((i for i in range(starts[-1], len(events)) if events[i][0] == "sp" and events[i][1] == f"{TIMED_LOOP}_end"), len(events))
-    return events[starts[-1] + 1 : end]
-
-#helper function that returns an op's name from a tracy host message ('TT_DNN_DEVICE_OP: "Conv2dDeviceOperation", 123, 0, ...')
-def op_name(msg):
-    return msg.split(":", 1)[-1].split(",", 1)[0].strip().strip('"')
-
-#helper function that walks the host run's signposts and card ops (each op already has its device duration) and returns
-#one dict per batch: (stage, substep) -> [host ms, overlap ms, card ms]
-#NOTE: card ops dispatched after a substep's _end but before the next substep starts are billed to that substep (its queued work)
-def per_batch(events):
-    batches = []
-    stage, sub = None, None
-    card_free = 0 #host-clock ns when the card finishes everything dispatched so far
-    for e in events:
-        if e[0] == "op":
-            _, ts, dev = e
-            op_start = max(ts, card_free) #starts once dispatched and once the card is free
-            card_free = op_start + dev
-            if sub is not None:
-                rec = batches[-1][sub]
-                if rec[5] is None: #first card op of this substep
-                    rec[5] = op_start
-                rec[6] = card_free #card end of this substep's ops so far
-            continue
-        _, name, ts = e
-        if name.endswith("_start") and name[: -len("_start")] in STAGES: #stage opens
-            stage, sub = name[: -len("_start")], None
-            if stage == STAGES[0]:
-                batches.append({})
-        elif name.endswith("_end") and name[: -len("_end")] in STAGES: #stage closes
-            stage, sub = None, None
-        elif name.endswith("_start") and stage and batches: #substep opens
-            sub = (stage, name[: -len("_start")])
-            #[host start, host end, card done before it, -, -, first card op start, last card op end]
-            batches[-1][sub] = [ts, None, card_free, None, None, None, None]
-        elif name.endswith("_end") and sub and name[: -len("_end")] == sub[1]: #substep closes
-            batches[-1][sub][1] = ts
-    out = []
-    for b in batches:
-        rows = {}
-        for key, (h_start, h_end, done_before, _, _, c_start, c_end) in b.items():
-            if h_end is None: #substep never closed (cut off)
-                continue
-            overlap = max(0.0, min(h_end, done_before) - h_start)
-            card = (c_end - c_start) if c_start is not None else 0.0
-            rows[key] = ((h_end - h_start) / 1e6, overlap / 1e6, card / 1e6)
-        if rows:
-            out.append(rows)
-    return out
-
 if not args.reuse:
     #1. unprofiled run
     run("STEP 1: unprofiled e2e run", [sys.executable] + harness_args, HARNESS_DIR) #run harness in unprofiled (e2e) mode and capture e2e latency
@@ -135,7 +71,7 @@ if not args.reuse:
     run("STEP 3: profiled e2e run under tracy, with the card profiler", [sys.executable, "-m", "tracy"] + TRACY_FLAGS
                                                  + ["-o", str(device_dir)] + harness_args + ["--profiled"], HARNESS_DIR)
 e2e_ms, e2e_step = latest_e2e_ms(BENCH_DIR / "stage_timings.csv", batch_size, E2E_STEPS)
-ops_csv = latest_ops_csv()
+ops_csv = latest_ops_csv(device_dir)
 
 #host run: signposts + card op dispatches, from tracy's host log (";" separated, messages wrapped in backticks)
 host_events = [] #("sp", name, ts) / ("op", name, ts)
@@ -146,7 +82,7 @@ for row in csv.DictReader(open(host_log, newline = ""), delimiter = ";", quotech
     elif msg.startswith("TT_DNN_DEVICE_OP"):
         host_events.append(("op", op_name(msg), float(row["total_ns"])))
 host_events.sort(key = lambda e: e[2])
-host_events = timed_loop(host_events, host_log)
+host_events = timed_loop(host_events, host_log, TIMED_LOOP)
 
 #device run: card ops (name, device kernel duration) in dispatch order, from the ops report
 dev_events = [] #("sp", name, ts) / ("op", name, ts, device ns)
@@ -159,7 +95,7 @@ for row in csv.DictReader(open(ops_csv)):
     except (KeyError, ValueError): #if row is cut off or not an op
         pass #skip current line
 dev_events.sort(key = lambda e: e[2]) #order by host time
-dev_ops = [e for e in timed_loop(dev_events, ops_csv) if e[0] == "op"]
+dev_ops = [e for e in timed_loop(dev_events, ops_csv, TIMED_LOOP) if e[0] == "op"]
 
 #match the two runs' ops one to one, in order, and give every host run op its device duration
 host_ops = [e for e in host_events if e[0] == "op"]
@@ -172,7 +108,7 @@ durations = iter(d[3] for d in dev_ops)
 events = [("op", e[2], next(durations)) if e[0] == "op" else e for e in host_events]
 missing_device = sum(1 for d in dev_ops if d[3] == 0) #card ops the card profiler didn't time, should be 0
 
-batches = per_batch(events)
+batches = per_batch(events, STAGES)
 if not batches:
     sys.exit(f"ERROR: NO BATCHES FOUND (check STAGES match the signpost names)")
 

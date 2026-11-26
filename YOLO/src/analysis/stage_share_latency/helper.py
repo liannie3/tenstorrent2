@@ -50,3 +50,71 @@ def avg(v):
 #chooses either the time on gpu, or host time that didn't overlap previous gpu work (i.e. whcihver side was bottleneck for the substep)
 def cost(host_time, overlap, gpu_time):
     return max(host_time - overlap, gpu_time)
+
+#TT-TRACY HELPERS
+
+#NOTE: events are tuples in host time order: ("sp", signpost name, ts) for signposts, ("op", ...) for card ops
+#returns the newest ops report tracy wrote into the given folder
+def latest_ops_csv(folder):
+    found = sorted(folder.glob("reports/**/ops_perf_results*.csv"), key = lambda p: p.stat().st_mtime)
+    if not found:
+        sys.exit(f"ERROR: NO ops_perf_results*.csv FOUND UNDER {folder}/reports (did tracy run with -r?)")
+    return found[-1]
+
+#keeps only the events inside the LAST timed loop (warmup batches aren't counted)
+def timed_loop(events, source, loop_name):
+    starts = [i for i, e in enumerate(events) if e[0] == "sp" and e[1] == f"{loop_name}_start"]
+    if not starts:
+        sys.exit(f"ERROR: NO {loop_name}_start SIGNPOST FOUND IN {source}")
+    end = next((i for i in range(starts[-1], len(events)) if events[i][0] == "sp" and events[i][1] == f"{loop_name}_end"), len(events))
+    return events[starts[-1] + 1 : end]
+
+#returns an op's name from a tracy host message 
+#e.g ('TT_DNN_DEVICE_OP: "Conv2dDeviceOperation", 123, 0, ...')
+def op_name(msg):
+    return msg.split(":", 1)[-1].split(",", 1)[0].strip().strip('"')
+
+#walks the host run's signposts and card ops (each op already has its device duration) and returns
+#one dict per batch: (stage, substep) -> [host ms, overlap ms, card ms]
+#NOTE: all queued work is billed to the substep its associated with, since
+#      card ops dispatched after a substep's _end but before the next substep starts are billed to that substep 
+def per_batch(events, stages):
+    batches = []
+    stage, sub = None, None
+    card_free = 0 #host-clock ns when the card finishes everything dispatched so far
+    for e in events:
+        if e[0] == "op":
+            _, ts, dev = e
+            op_start = max(ts, card_free) #starts once dispatched and once the card is free
+            card_free = op_start + dev
+            if sub is not None:
+                rec = batches[-1][sub]
+                if rec[3] is None: #first card op of this substep
+                    rec[3] = op_start
+                rec[4] = card_free #card end of this substep's ops so far
+            continue
+        _, name, ts = e
+        if name.endswith("_start") and name[: -len("_start")] in stages: #stage opens
+            stage, sub = name[: -len("_start")], None
+            if stage == stages[0]:
+                batches.append({})
+        elif name.endswith("_end") and name[: -len("_end")] in stages: #stage closes
+            stage, sub = None, None
+        elif name.endswith("_start") and stage and batches: #substep opens
+            sub = (stage, name[: -len("_start")])
+            #[host start, host end, card done before it, first card op start, last card op end]
+            batches[-1][sub] = [ts, None, card_free, None, None]
+        elif name.endswith("_end") and sub and name[: -len("_end")] == sub[1]: #substep closes
+            batches[-1][sub][1] = ts
+    out = []
+    for b in batches:
+        rows = {}
+        for key, (h_start, h_end, done_before, c_start, c_end) in b.items():
+            if h_end is None: #substep never closed (cut off)
+                continue
+            overlap = max(0.0, min(h_end, done_before) - h_start)
+            card = (c_end - c_start) if c_start is not None else 0.0
+            rows[key] = ((h_end - h_start) / 1e6, overlap / 1e6, card / 1e6)
+        if rows:
+            out.append(rows)
+    return out
