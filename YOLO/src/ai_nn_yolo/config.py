@@ -59,8 +59,8 @@ NUM_COMMAND_QUEUES = 1
 
 #NOTE: activations stay in L1 (height/block sharded) between ops, exactly like the yolov8x demo, so there is no DRAM option.
 #      Every conv uses Conv2dL1FullSliceConfig (the whole feature map must fit in L1), which caps the batch size
-WEIGHTS_DTYPE = "bfp8"    #"bfp8" (yolov8x demo default: bfloat8_b weights AND activations) or "bf16" (more accurate, slower)
-MATH_FIDELITY = "lofi"    #"lofi" (yolov8x demo default, fastest), "hifi2", "hifi4" (most accurate)
+WEIGHTS_DTYPE = "bf16"    #"bfp8" (yolov8x demo default: bfloat8_b weights AND activations) or "bf16" (more accurate, slower)
+MATH_FIDELITY = "hifi2"    #"lofi" (yolov8x demo default, fastest), "hifi2", "hifi4" (most accurate)
 CONV_INPUT_GUARD = "block" #"block": block-sharded inputs of non-block convs go to L1 interleaved first (fixes conv_5 -> c2f_6)
                           #"all": every sharded conv input goes to L1 interleaved (slower, matches tests/layer_check.py ISOLATED)
                           #"off": exactly like the yolov8x demo
