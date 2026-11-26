@@ -837,7 +837,10 @@ class TtDetectionModel:
         nhwc = ttnn.permute(nchw, (0, 2, 3, 1))  # NCHW -> NHWC
         ttnn.deallocate(nchw)
         ttnn.deallocate(x)
-        nhwc = ttnn.reallocate(nhwc)
+        #NOTE: yolov8n port: the original called nhwc = ttnn.reallocate(nhwc) here. Right after the two deallocates above,
+        #      reallocate moves nhwc down into the freed space, which overlaps nhwc itself; on this tt-metal build that move
+        #      corrupts the tensor (tested on the p150a: deallocate alone and reallocate alone are both exact, together
+        #      the input comes back as NaN). reallocate only compacts memory, so dropping it doesn't change the math
         x = ttnn.reshape(nhwc, [1, 1, nhwc.shape[0] * nhwc.shape[1] * nhwc.shape[2], nhwc.shape[-1]])
         return x
 
