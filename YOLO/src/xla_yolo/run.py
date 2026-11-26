@@ -115,5 +115,6 @@ def run_pipeline(model, img_paths, batch_size: int = config.BATCH_SIZE, device =
             csv_rows = results.display_e2e_results(batch_times, num_images, batch_size, device, hw_window["start"], hw_window["end"])
         else:
             csv_rows = results.display_results(stage_wall_timings, num_images, batch_size, device)
-        results.store_results(csv_rows)
+        if not config.PROFILE:  #profiled runs incurr nsys latency overhead, so shouldn't store results
+            results.store_results(csv_rows)
     return outputs

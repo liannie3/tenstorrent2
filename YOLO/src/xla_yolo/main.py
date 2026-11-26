@@ -72,8 +72,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16, 32, 64] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
     parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
     parser.add_argument("--optimization", type = int, choices = [0, 1, 2], default = 0, help = "determines level of TT-XLA compiler optimization (defaulted to 0)")
+    parser.add_argument("--profiled", action = "store_true", help = "indicates a profiled e2e run for stage_share.py (same run, results not saved to stage_timings.csv)")
     args = parser.parse_args()
     xr.set_device_type("TT") #pytorch xla defaults to run on host as device, so select TT card as device before model
     torch_xla.set_custom_compile_options({"optimization_level": args.optimization})
     print(f"   TT-XLA optimization level {args.optimization}")
+    config.PROFILE = args.profiled
     main(args.setting, config.IMG_DIR, args.batch_size, args.step)

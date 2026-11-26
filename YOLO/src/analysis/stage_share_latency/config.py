@@ -13,4 +13,4 @@ E2E_STEPS = ("BATCH_MEDIAN", "TOTAL_PER_BATCH") #e2e rows in stage_timings.csv t
 #-r: build the ops report csv (one row per card op with its device duration, plus one row per signpost)
 #--op-support-count: how many ops the on-card profiler buffer keeps; the default is too small for a whole e2e run
 #--no-web-server: don't leave tracy's web viewer running after the capture
-TRACY_FLAGS = ["-r", "--op-support-count", "20000", "--no-web-server"]
+TRACY_FLAGS = ["-r", "--op-support-count", "20000"]
