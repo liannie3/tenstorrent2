@@ -86,3 +86,4 @@ SUBSTEP_TIMING = False #used to control if sub steps are timed, or pure wall tim
                        #TODO: can possibly write a small kernel that grabs GPU timestamp and use that in place of events
                        
 PROFILE = False
+E2E_FLUSH = False #True during the e2e pass, makes timing.timed() send each card substep's graph to the card at its end (see timing.py)

@@ -41,7 +41,9 @@ def main(setting, img_dir, batch_size : int = 1, step : int = 1):
     if setting in ("e2e", "holistic"):
         print(f"    PASS 0: End to End latency (asynchronous capturing total host time per batch)  ")
         config.SUBSTEP_TIMING = False
-        results = run_pipeline(model, img_paths, batch_size, config.DEVICE, "e2e")     
+        config.E2E_FLUSH = True
+        results = run_pipeline(model, img_paths, batch_size, config.DEVICE, "e2e")
+        config.E2E_FLUSH = False   
     if setting in ("latency", "holistic", "profile"):
         print(f"   PASS 1: stage wall times only (synchronous profiling)   ")
         config.SUBSTEP_TIMING = False

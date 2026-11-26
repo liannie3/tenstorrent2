@@ -59,6 +59,8 @@ def timed(store, name, device, gpu_work = True):
     if not config.SUBSTEP_TIMING or config.HARDWARE_METRICS: #wall timing uses perf counters and sync so timed unapplicable
         signpost(f"{name}_start")
         yield
+        if gpu_work and config.E2E_FLUSH:
+            torch_xla.sync(wait = False) #send this substep's queued graph to the card now (i.e no wait) so its ops are dispatched inside this substep instead of the next one
         signpost(f"{name}_end")
         return
     if gpu_work:
