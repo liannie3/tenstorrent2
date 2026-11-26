@@ -24,14 +24,19 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS
 #          inference finishes) or working behind it (launching neck kernels while backbone runs)
 
 
-#NOTE: why both timelines: with no syncs the CPU only LAUNCHES GPU work, so a CPU range like "inference" closes as soon as
-#      the kernels are queued. The GPU projection is where that work actually ran
-#NOTE: why max: when the CPU is the bottleneck the GPU sits idle while the CPU prepares/launches the next substep, so the
-#      substep takes its host time (this is also what pass 2's CUDA events measure, since they're recorded in the GPU
-#      stream before and after the CPU work). When the GPU is the bottleneck it takes its GPU time
-#NOTE: no syncs are added. nsys puts CPU ranges and GPU work on one clock, which is how the overlap is found
-#NOTE: only ranges directly inside a stage count; ranges libraries push inside a substep (e.g. cub:: inside NMS) are skipped
-#NOTE: TT version (tracy + signposts) is stage_share_tt.py, same output format
+#NOTE: reason for inaccuracy compared to cuda events async latency timing (pass 2)
+#      nsys adds a small overhead to every CUDA API call it records, so the profiled run is slower than the unprofiled run
+#      importantly not evenly slower, as substeps that make many small API calls like NMS and rescale (loop over every img in the batch)
+#      are inflated more than substeps with few calls like inference (only launcches a handful of compiled kernels)
+#      the profiled percentages are multiplied by ONE unprofiled e2e total, which assumes every substep was slowed down equally
+#      so substeps with many API calls get a larger share than reality (higher than expected latency)
+#      and substeps with few API calls get a smaller share than reality (lower than expected latency)
+#      
+#      explains why we see inference substages measure lower latency than gpu event latency implies, and nms substage incurss greater latency than events imply
+#      e.g. measured on the jetson at batch 16: postprocess +49%, inference -15%, preprocess -10% vs cuda events
+
+#NOTE: we are okay with this because the profiled async latency is only intended to give us an objective async comparison between tt and cuda (since tt lacks gpu event)
+#      thus we don't have to worry about its accuracy to reality (async gpu event timing)
 
 #CLI ARGS
 parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
