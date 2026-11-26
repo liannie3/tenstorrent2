@@ -79,6 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT
     parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
     parser.add_argument("--optimization", choices = ["inductor", "aot_eager", "eager"], default = "inductor", help = "determines torch.compile backend, aot_eager = no fusion / no Triton optimization (defaulted to inductor)") #set level of compile time optimization via compilation backend tuning
+    parser.add_argument("--profiled", action = "store_true", help = "indicates a profiled e2e run for stage_share.py (same run, results not saved to stage_timings.csv)")
     args = parser.parse_args()
     #NOTE: SET BEFORE MODEL IS LOADED AND COMPILED
     config.COMPILE_BACKEND = args.optimization 
@@ -87,5 +88,6 @@ if __name__ == "__main__":
         config.DTYPE = torch.float32
     else:
         config.DTYPE = torch.bfloat16
+    config.PROFILE = args.profiled
     print(f"   RUN USING OPTIMIZATION LEVEL OF torch.compile backend: {args.optimization}") 
     main(args.setting, config.IMG_DIR, args.batch_size, args.step)
