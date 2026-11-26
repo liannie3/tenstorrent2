@@ -327,7 +327,9 @@ def conv2d(input_tensor, weight_tensor, in_channels, out_channels, device, bias_
     y = y.permute(0, 2, 3, 1).reshape(1, 1, n * oh * ow, c)
     if dtype == bfloat8_b:
         y = _q(y)
-    out = Tensor(y, getattr(conv_config, "output_layout", TILE_LAYOUT), MemoryConfig("sharded"), dtype or bfloat16)
+    mem = MemoryConfig("sharded")
+    mem.memory_layout = getattr(conv_config, "shard_layout", None) or TensorMemoryLayout.HEIGHT_SHARDED
+    out = Tensor(y, getattr(conv_config, "output_layout", TILE_LAYOUT), mem, dtype or bfloat16)
     result = [out]
     if return_output_dim:
         result.append([oh, ow])

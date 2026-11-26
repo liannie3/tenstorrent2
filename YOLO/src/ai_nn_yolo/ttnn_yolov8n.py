@@ -164,6 +164,17 @@ class TtConv:
             input_height = x.shape[1]
             input_width = x.shape[2]
 
+        #NOTE: yolov8n port: on the p150a (tests/layer_check.py) every conv is exact when its input is L1 interleaved, but a
+        #      block-sharded output fed straight into a conv that isn't block sharded (conv_5 -> c2f_6) comes out wrong.
+        #      config.CONV_INPUT_GUARD: "block" converts block-sharded inputs of non-block convs to L1 interleaved first,
+        #      "all" converts every sharded input, "off" is the original behaviour
+        if config.CONV_INPUT_GUARD != "off" and x.is_sharded():
+            in_layout = x.memory_config().memory_layout
+            block_in = in_layout == ttnn.TensorMemoryLayout.BLOCK_SHARDED
+            block_conv = self.conv_config.shard_layout == ttnn.TensorMemoryLayout.BLOCK_SHARDED
+            if config.CONV_INPUT_GUARD == "all" or (block_in and not block_conv):
+                x = ttnn.sharded_to_interleaved(x, ttnn.L1_MEMORY_CONFIG)
+
         [x, [out_height, out_width], [self.weights, self.bias]] = ttnn.conv2d(
             input_tensor=x,
             weight_tensor=self.weights,
