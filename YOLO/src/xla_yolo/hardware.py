@@ -95,16 +95,21 @@ def hardware_run_pipeline(model, img_paths, batch_size : int = config.BATCH_SIZE
     with hw_monitor() as monitor:
         run.run_pipeline(model, img_paths, batch_size, device)
 
-    results.store_hw_window(monitor, "full_pipeline", batch_size, run.hw_window["start"], run.hw_window["end"])
+    results.store_hw_window(monitor, "full_pipeline", batch_size, run.hw_window["start"], run.hw_window["end"], config.STEP, config.OPTIMIZATION)
     print_logs(monitor, config.HARDWARE_PATH) #indicates what logs were updated and where they're located
 #test each substage in isolation over a fixed period and accumulates, averages, then stores associated hardware metrics
 @torch.no_grad()
-def hardware_substages(model, images, device = config.DEVICE):
-    #prepare each stages inputs before metrics are gathered
-    sample = images[:config.HW_SAMPLE_SIZE]
+def hardware_substages(model, images, batch_size = 1, device = config.DEVICE):
+    #group the sample into batches of batch_size (same shape every call, so one compiled graph per stage)
+    n_batches = max(1, config.HW_SAMPLE_SIZE // batch_size) #at least one batch even when batch_size > HW_SAMPLE_SIZE
+    sample = images[: n_batches * batch_size]
+    if len(sample) < batch_size:
+        sys.exit(f"ERROR: NEED AT LEAST {batch_size} IMAGES FOR A BATCH {batch_size} STAGE RUN")
+    batches = [sample[i:i + batch_size] for i in range(0, len(sample), batch_size)]
+
     ims, shapes, preds = [], [], []
-    for i in range(len(sample)):
-        im, shape = preprocess_stage(sample[i:i+1], device)
+    for b in batches: #prepare each stage's inputs before metrics are gathered
+        im, shape = preprocess_stage(b, device)
         ims.append(im)
         shapes.append(shape)
         preds.append(inference_stage(model, im, device))
@@ -113,7 +118,7 @@ def hardware_substages(model, images, device = config.DEVICE):
     #lookup table to invoke each substage (and an idle for baseline) independently
     substages = {
         "idle": lambda i: time.sleep(0.01),
-        "pre_processing": lambda i: preprocess_stage(sample[i:i+1], device),
+        "pre_processing": lambda i: preprocess_stage(batches[i], device),
         "inference": lambda i: inference_stage(model, ims[i], device),
         "post_processing": lambda i: postprocess_stage(preds[i], ims[i], shapes[i], config.CONF_THRES, config.IOU_THRESH, device),
     }
@@ -126,18 +131,21 @@ def hardware_substages(model, images, device = config.DEVICE):
     runs = []
     with hw_monitor() as monitor:
         for name, substage_func in substages.items(): #grab each substage from the lookup tablew
+            time.sleep(config.COOLDOWN) #lets the chip cool back to idle temps before testing next substage, prevents previous run's tempts merging into this substage data
             _card_sync()
             t_start = time.time()
             n = 0 #reset to only track iterations within a run
             while (time.time() - t_start) < config.PHASE_LIMIT: #run the substage under a time limit
-                substage_func(n % len(sample) ) #iterate through sample images
+                substage_func(n % len(batches)) #iterate through sample images
                 n+=1
             _card_sync() #force cpu to wait for card work after runs finish
             
             t_end = time.time()
-            runs.append({"monitor": monitor,"stage": name, "batch_size" : 1, "start" : t_start, "end" : t_end, "iterations" : n})
-            print(f"{name:<16} {n} runs, {(t_end - t_start) / n * 1000:.2f} ms per run")
-            time.sleep(1) #further discretize phases of substage testing
+            runs.append({"monitor": monitor,"stage": name, "batch_size" : batch_size, "start" : t_start, "end" : t_end, "iterations" : n,
+                         "step": config.STEP, "optimization": config.OPTIMIZATION}) #step and optimization added to  the end of the row
+            per_batch = (t_end - t_start) / n * 1000 #ms per call (one batch)
+            per_img = "" if name == "idle" else f", {per_batch / batch_size:.2f} ms per img" #idle processes no images
+            print(f"{name:<16} {n} runs, {per_batch:.2f} ms per batch{per_img}")
 
     results.store_hw_stages(runs)
     print_logs(monitor, config.HARDWARE_STAGES_PATH)

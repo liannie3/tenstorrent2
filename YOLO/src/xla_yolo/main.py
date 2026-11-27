@@ -64,7 +64,7 @@ def main(setting, img_dir, batch_size : int = 1, step : int = 1):
     
             print(f"  PASS 4: stage based {monitor_name} hardware metrics (average of each pipeline stage)")
             images = load_images(img_paths)
-            hardware_substages(model, images, config.DEVICE) 
+            hardware_substages(model, images, batch_size, config.DEVICE) 
     
     return results
     
@@ -80,4 +80,6 @@ if __name__ == "__main__":
     torch_xla.set_custom_compile_options({"optimization_level": args.optimization})
     print(f"   TT-XLA optimization level {args.optimization}")
     config.PROFILE = args.profiled
+    config.STEP = args.step
+    config.OPTIMIZATION = args.optimization
     main(args.setting, config.IMG_DIR, args.batch_size, args.step)

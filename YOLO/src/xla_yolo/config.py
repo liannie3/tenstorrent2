@@ -23,8 +23,8 @@ HARDWARE_LOG = CSV_PATH.parent / "tegrastats.log"
 
 #indicates fields to be saved in each row of csv dictionary
 CSV_FIELDS = ["timestamp", "script", "pass", "device", "batch_size", "num_images", "stage", "step", "ms"] #nested dictionaries to asynchronously store timing for each layer of each stage
-HARDWARE_FIELDS = ["monitor", "phase", "batch_size", "start", "end"]
-STAGE_FIELDS = ["monitor", "stage", "batch_size", "start", "end", "iterations"]
+HARDWARE_FIELDS = ["monitor", "phase", "batch_size", "start", "end", "step", "optimization"]
+STAGE_FIELDS = ["monitor", "stage", "batch_size", "start", "end", "iterations", "step", "optimization"]
 IMG_FORMATS = [".jpg", ".jpeg", ".png"]
 
 #pipeline stages
@@ -64,6 +64,7 @@ NECK_BOUNDARY = 21 #indicates neck layers are 10-21.
 #indicates maximum of five seconds per stage for aggregate hardware testing
 PHASE_LIMIT = 5.0 
 HW_SAMPLE_SIZE = 25
+COOLDOWN = 30 #wait 30 seconds in between measuring hw substage activity, allows time for chip to cool and prevent heat from previous substage work from spilling over into another substage
 #######################################################################################################################################################################  
 #                        | | | |                                                                                                                                      #
 #   Run flags            V V V V                                                                                                                                      #

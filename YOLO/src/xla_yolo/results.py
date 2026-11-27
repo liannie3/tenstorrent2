@@ -59,9 +59,10 @@ def display_e2e_results(batch_times, num_images, batch_size, device, start, end)
 def store_results(rows):
     _append_csv(config.CSV_PATH, config.CSV_FIELDS, rows)
     
-def store_hw_window(monitor, phase, batch_size, start, end):
+def store_hw_window(monitor, phase, batch_size, start, end, step, optimization):
     _append_csv(config.HARDWARE_PATH, config.HARDWARE_FIELDS,
-                [{"monitor": monitor, "phase": phase, "batch_size" : batch_size, "start": start, "end": end}])
+                [{"monitor": monitor, "phase": phase, "batch_size" : batch_size, "start": start, "end": end,
+                  "step": step, "optimization": optimization}]) #step / optimization stored so hw runs can be told apart
 
 def store_hw_stages(runs):
     _append_csv(config.HARDWARE_STAGES_PATH, config.STAGE_FIELDS, runs)
