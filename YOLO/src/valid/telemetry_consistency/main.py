@@ -47,6 +47,6 @@ for key in all_runs[0]["idle"]:
     print(row)
 #NOTE: every power rail, GPU load and temperature of every stage must be >= idle in every run (temperatures within --temp_tolerance)
 if failed: #if failed run exists
-    print(f"    ===Telemetry consistency validation check FAILED!\n    ===Expected every stage's power, GPU load and temperature (within {args.temp_tolerance} C) >= idle in all {args.iterations} run(s), below idle: {', '.join(failed)}")
+    print(f"\n    ===Telemetry consistency validation check FAILED!\n    ===Expected every stage's power, GPU load and temperature (within {args.temp_tolerance} C) >= idle in all {args.iterations} run(s), below idle: {', '.join(failed)}")
 else:
-    print(f"    ===Telemetry consistency validation check PASSED!\n    ===Every stage's power, GPU load and temperature (within {args.temp_tolerance} C) >= idle in all {args.iterations} run(s)")
+    print(f"\n    ===Telemetry consistency validation check PASSED!\n    ===Every stage's power, GPU load and temperature (within {args.temp_tolerance} C) >= idle in all {args.iterations} run(s)")
