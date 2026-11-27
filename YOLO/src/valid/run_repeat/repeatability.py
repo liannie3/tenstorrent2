@@ -5,7 +5,7 @@ import argparse
 import statistics #easily calculate std and mean
 
 parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
-parser.add_argument("--iterations", type = int, choices = [1,2,3,4,5,6,7,8,9,10],  default = 5, help = "determines how many iterations are run (defaulted to 5)") #used to allow user tuning of noise reducton
+parser.add_argument("--iterations", type = int, choices = [2,3,4,5,6,7,8,9,10],  default = 5, help = "determines how many iterations are run (defaulted to 5)") #used to allow user tuning of noise reducton
 parser.add_argument("--step", type = int, choices = [1,2,4,8,16], default = 1, help = "creates subset of image database composed of every nth image (defaulted to 1)") #used to create accurate subset of db
 parser.add_argument("--accuracy", type = int, choices = [1,2,3,4,5,6,7,8,9,10],  default = 5, help = "determines the degree accuracy to validate against (defaulted to 5%%)") #used to allow user tuning accuracy threshold
 parser.add_argument("--setting", choices = ["sub_events", "stage", "e2e", "sub_profiled"], default = "stage", help = "determines the type of harness run to validate (defaulted to stage)") #NOTE: profiled should use the profiled stage share latency times
@@ -27,7 +27,7 @@ for i in range(args.iterations):
 
     #CAPTURE RESULTS
     if args.setting == "e2e": #end to end latency run repeat verification
-        result = subprocess.run([sys.executable, "substages_compiled/main.py", "--setting", "e2e"] + harness_args,
+        result = subprocess.run([sys.executable, "substage_compiled/main.py", "--setting", "e2e"] + harness_args,
                                  cwd = SRC_DIR, capture_output = True, text = True) #run from YOLO/src, text = True gives strings instead of bytes
         for line in result.stdout.splitlines():
             stage = line.split()
@@ -36,7 +36,7 @@ for i in range(args.iterations):
 
     elif args.setting == "sub_events" or args.setting == "stage": #ULTRALYITICS-style sync substage time abd substep timing with cuda gpu events run repeat verification and 
                                                                   #NOTE: both are recorded in latency run of harness PASS 1 and PASS 2 respectively
-        result = subprocess.run([sys.executable, "substages_compiled/main.py", "--setting", "latency"] + harness_args,
+        result = subprocess.run([sys.executable, "substage_compiled/main.py", "--setting", "latency"] + harness_args,
                                  cwd = SRC_DIR, capture_output = True, text = True) #run from YOLO/src, text = True gives strings instead of bytes
         HARNESS_NAMES = {"pre_processing": "preprocess", "inference": "inference", "post_processing": "postprocess"}
         for line in result.stdout.splitlines():
@@ -63,14 +63,14 @@ for i in range(args.iterations):
         sys.exit(f"ERROR: RUN {i + 1} FAILED OR DIDN'T PRINT EXPECTED LATENCIES")
 
 #NOTE: recall validation requirement for test is:
-#      Standard deviation of end-to-end latency of any run through each subsystem should be within 5% of the mean latency.
+#      Standard deviation of end-to-end latency of any run through each subsystem should be within 5% (or args.accuracy) of the mean latency.
 #DISPLAY RESULTS
 print(f"\n  {'NAME':<34} {'mean':>9} {'std dev':>9} {'min':>9} {'max':>9} {'std/mean':>9}")
 failed = [] #stores runs that failed validation criteria
 for key, values in times.items(): #loop through iterations stored times
     mean = statistics.mean(values)
     std = statistics.stdev(values) #sample standard deviation (n - 1)
-    cv = ( (std / mean) * 100) if mean else 0.0 #std dev as % of the mean
+    cv = ( (std / mean) * 100) if mean else 0.0 #compute coefficient of variation, std dev as % of the mean
     print(f"  {key:<34} {mean:>9.3f} {std:>9.3f} {min(values):>9.3f} {max(values):>9.3f} {cv:>8.1f}%")
     if cv > args.accuracy and std > MIN_ABS:
         failed.append(key)
