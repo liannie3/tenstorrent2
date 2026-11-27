@@ -31,7 +31,8 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
     for stage in config.STAGES: #for each stage
         total_time = 0.0
         for substep, vals in timings[stage].items(): #loop through each stage's dictionary
-            per_img = np.median(vals)/batch_size #TODO: could also use mean, but median is serviceable for 1 batch size
+            per_img = np.median(vals) / batch_size #TODO: could also use mean, but median is serviceable for 1 batch size
+            wall = np.median(stage_wall_timings[stage]) / batch_size #stage is timed per batch, divided so every row is per image like the substeps
             total_time += per_img #track total time for stage
             rows.append( {"timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
                                           "stage" : stage, "substep" : substep, "ms" : per_img, **info } )
@@ -42,9 +43,9 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
             print(f"  {stage:<16} {'SUM OF STEPS':<20} {total_time:8.2f}")
         else: #if only wall times are timed
             rows.append( { "timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
-                                           "stage" : stage, "substep" : "TOTAL_WALL_TIME", "ms" : np.median(stage_wall_timings[stage]), **info } )
-            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {np.median(stage_wall_timings[stage]):8.2f}")
-    return rows
+                                           "stage" : stage, "substep" : "TOTAL_WALL_TIME", "ms" : wall, **info } )
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {wall:8.2f}")
+        return rows
     
 #end to end pass: no added syncs, total time of the whole run plus per batch spread
 def display_e2e_results(batch_times, num_images, batch_size, device, start, end):
