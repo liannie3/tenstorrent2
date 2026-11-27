@@ -7,12 +7,11 @@ from pathlib import Path
 #needs: tegrastats.log (lines start with the time.time() stamp), hw_metrics.csv, and hw_stages.csv files
 #shows: the latest full pipeline run for each batch size, then the latest idle / pre / inference / post stage runs
 
-
-folder = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+BENCHMARK_DIR = Path(__file__).parent.parent.parent.parent / "benchmarking" #this file is in YOLO/src/analysis/hw_metrics, 4 parents up is YOLO/
 
 #read the log: keep (time, line) for every line that starts with a time stamp
 readings = []
-for line in open(folder / "tegrastats.log"):
+for line in open(BENCHMARK_DIR / "tegrastats.log"):
     first = line.split(" ", 1)[0]
     try:
         readings.append((float(first), line))
@@ -61,7 +60,7 @@ def report(title, start, end):
 #full pipeline runs
 #NOTE: hw_metrics.csv rows are monitor,phase,batch_size,start,end
 latest = {} #batch size -> (start, end), later rows replace earlier ones
-for line in open(folder / "hw_metrics.csv"):
+for line in open(BENCHMARK_DIR / "hw_metrics.csv"):
     row = line.strip().split(",")
     if len(row) == 5 and row[0] == "tegrastats" and row[2].isdigit():
         latest[int(row[2])] = (float(row[3]), float(row[4]))
@@ -70,7 +69,7 @@ for b in sorted(latest):
 
 #stage average performance from 5 seconds of runtime
 #NOTE: hw_stages.csv rows are monitor,stage,(batch_size,)start,end,iterations
-stages_path = folder / "hw_stages.csv"
+stages_path = BENCHMARK_DIR / "hw_stages.csv"
 if stages_path.exists():
     stages = {}
     for line in open(stages_path):
