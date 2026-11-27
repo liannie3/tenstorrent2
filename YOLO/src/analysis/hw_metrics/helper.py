@@ -2,8 +2,9 @@ import re
 import time
 
 #HELPER FUNCTIONS
+#NOTE: functions only see globals from the file they're defined in, so readings / args are passed in as arguments
 
-#returns  the desired info out of a tegrastats log line
+#helper function that pulls the info out of a tegrastats log line
 def parse(line):
     power = {} #rail name -> watts, from text like "VDD_GPU_SOC 5123mW/5000mW" (first number = right now)
     for name, mw in re.findall(r"(\w+) (\d+)mW/\d+mW", line):
@@ -14,8 +15,8 @@ def parse(line):
     load = re.search(r"GR3D_FREQ (\d+)%", line) #GPU load
     return power, temp, int(load.group(1)) if load else None #returns power, temp, and GPU load
 
-#print average and max of every reading inside one window [start, end]
-#NOTE: requires readings to be passed from main.py
+#helper function that prints average and max of every reading inside one window [start, end]
+#NOTE: readings is the list of (time stamp, line) read from tegrastats.log
 def report(title, start, end, readings):
     inside = [line for t, line in readings if start <= t <= end] #metrics found within the window of the run
     print(f"\n    {title}: {time.strftime('%m-%d %H:%M:%S', time.localtime(start))}, {end - start:.1f} s, {len(inside)} readings    ")
@@ -43,7 +44,7 @@ def report(title, start, end, readings):
     if loads:
         print(f"  {'GPU LOAD (%)':<16} {sum(loads) / len(loads):>7.0f} {max(loads):>7}")
 
-#returns true when a log's row batch_size, step, and optimization equal the current options given
+#helper function that is True when a row's batch size / step / optimization match the options given (None = any)
 def wanted(batch_size, step, optimization, args):
-     return ((args.batch_size is None or batch_size is None or batch_size == args.batch_size) and (args.step is None or step == args.step)
+    return ((args.batch_size is None or batch_size == args.batch_size) and (args.step is None or step == args.step)
             and (args.optimization is None or optimization == args.optimization))

@@ -61,7 +61,8 @@ NECK_BOUNDARY = 21 #indicates neck layers are 10-21.
 #######################################################################################################################################################################  
 
 #indicates maximum of five seconds per stage for aggregate hardware testing
-PHASE_LIMIT = 5.0 
+PHASE_LIMIT = 5.0
+COOLDOWN = 30 #waits 30 seconds in between each hardware stage phase to allow for chip temps to return to idle before capturing next substage (prevents previous runs for affecting current)
 HW_SAMPLE_SIZE = 25
 
 #######################################################################################################################################################################  
