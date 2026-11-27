@@ -67,6 +67,7 @@ def main(setting, img_dir, batch_size : int = 1, step : int = 1):
             hardware_run_pipeline(model, img_paths * 5, batch_size, config.DEVICE)
 
             print(f"  PASS 4: stage based {monitor_name} hardware metrics (average of each pipeline stage, batch {batch_size})")
+            print(f"  NOTICE: will take at least 2 minutes as card needs to idle 30 seconds between testing each substage to avoid temperatures spilling over btw substages")
             images = load_images(img_paths)
             hardware_substages(model, images, batch_size, config.DEVICE) #NOTE: batch_size before device, matches hardware_substages(model, images, batch_size, device)
     
