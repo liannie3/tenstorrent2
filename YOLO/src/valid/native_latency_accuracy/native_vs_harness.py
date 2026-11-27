@@ -54,9 +54,9 @@ for line in harness_result.stdout.splitlines():
 if len(native_times["inference"]) != args.iterations:
     print(native_result.stderr)
     sys.exit("ERROR: yoloNATIVE.py DIDN'T PRINT TIMES")
-if len(harness_times["inference"]) != args.iterations:
-    print(harness_result.stderr)
-    sys.exit("ERROR: unified_compiled/main.py DIDN'T PRINT TIMES")
+if harness_result.returncode != 0 or len(harness_times["inference"]) != i + 1: #stop at the first run that fails or prints no times
+    print(harness_result.stdout[-3000:]); print(harness_result.stderr[-3000:]) #end of that run's output, where the error is
+    sys.exit(f"ERROR: unified_compiled/main.py RUN {i + 1} FAILED OR DIDN'T PRINT TIMES")
 
 #capture average mean difference in each stage for optional validation check (NOTE: no stage +/-5% diff)
 native_med = {
