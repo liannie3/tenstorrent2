@@ -31,7 +31,7 @@ if args.fresh:
     args.step = args.step or 1
     args.optimization = args.optimization or "inductor"
     fresh_start = time.time()
-    cmd = [sys.executable, "substages_compiled/main.py", "--setting", "hardware", "--batch_size", str(args.batch_size), "--step", str(args.step),
+    cmd = [sys.executable, "substage_compiled/main.py", "--setting", "hardware", "--batch_size", str(args.batch_size), "--step", str(args.step),
            "--optimization", args.optimization]
     print("  $ " + " ".join(cmd)) #display exact command to allow for it to be rerun by hand
     if subprocess.run(cmd, cwd = SRC_DIR).returncode != 0:
