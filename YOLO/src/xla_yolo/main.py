@@ -45,12 +45,12 @@ def main(setting, img_dir, batch_size : int = 1, step : int = 1):
         results = run_pipeline(model, img_paths, batch_size, config.DEVICE, "e2e")
         config.E2E_FLUSH = False   
     if setting in ("latency", "holistic", "profile"):
-        print(f"   PASS 1: stage wall times only (synchronous profiling)   ")
+        print(f"   PASS 1: stage wall times only (ULTRALYTICS-style synchronous profiling)   ")
         config.SUBSTEP_TIMING = False
         results = run_pipeline(model, img_paths, batch_size, config.DEVICE)
         if setting != "profile":
             config.SUBSTEP_TIMING = True
-            print("   PASS 2: substep times (card synced around every card substep, see timing.py)   ")
+            print("   PASS 2: substep times ((ULTRALYTICS-style synchronous profiling card synced around every card substep)   ")
             results = run_pipeline(model, img_paths, batch_size, config.DEVICE)
             config.SUBSTEP_TIMING = False
     if setting in ("hardware", "holistic"):
