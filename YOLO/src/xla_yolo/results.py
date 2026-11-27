@@ -26,10 +26,11 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
     pass_name = "substep_timing" if config.SUBSTEP_TIMING else "wall_timing"
     rows = [] #holds information to be stored later in store_results
     timestamp = datetime.now().isoformat(timespec = "seconds")
+    info = _run_info() #step, optimization and precision added to the end of every row
     print(f"per-image timings (ms), {num_images} images, batch={batch_size}, step={info['step']}, opt={info['optimization']}, precision={info['precision']}, device={device}")
-        for stage in config.STAGES: #for each stage
+    for stage in config.STAGES: #for each stage
         total_time = 0.0
-        for step, vals in timings[stage].items(): #loop through each stage's dictionary
+        for substep, vals in timings[stage].items(): #loop through each stage's dictionary
             per_img = np.median(vals)/batch_size #TODO: could also use mean, but median is serviceable for 1 batch size
             total_time += per_img #track total time for stage
             rows.append( {"timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
@@ -48,6 +49,7 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
 #end to end pass: no added syncs, total time of the whole run plus per batch spread
 def display_e2e_results(batch_times, num_images, batch_size, device, start, end):
     timestamp = datetime.now().isoformat(timespec = "seconds")
+    info = _run_info() 
     num_batches = len(batch_times)
     total_per_batch = (end - start) * 1000 / num_batches   #whole run / batches, includes the one sync at the end
     median_per_batch = np.median(batch_times)
