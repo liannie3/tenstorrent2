@@ -28,12 +28,12 @@ NAME = "subset" #golden files are saved as golden_subset_<precision>..., separat
 common = ["--name", NAME, "--precision", args.precision, "--optimization", args.optimization, "--batch_size", str(args.batch_size)]
 
 #CAPTURE RESULTS
-print("step 1 (full set reference)")
-reference = save(1)
+print("step 1 (full set reference golden file)")
+reference = save(1, GOLDEN_SCRIPTS, common) #save predictions of entire set as reference for subsequent step through subset tests
 rows, failed = [], [] #one row per step, steps that failed validation
 for step in args.steps:
     print(f"step {step}")
-    tag = save(step, GOLDEN_SCRIPTS)
+    tag = save(step, GOLDEN_SCRIPTS, common)
     result = subprocess.run([sys.executable, "compare.py", reference, tag, "--accuracy", str(args.accuracy), "--max_conf_diff", str(args.max_conf_diff)],
                             cwd = GOLDEN_SCRIPTS, capture_output = True, text = True)
     #compare.py prints lines like:
