@@ -5,6 +5,12 @@ import numpy as np
 import config
 from timing import timings
 
+#helper function that returns the run settings stored with every latency row and shown in results header
+#NOTE: step now stands for the step through rate of db of images and not substep stage name
+def _run_info():
+    precision = {"torch.float32": "fp32", "torch.float16": "fp16", "torch.bfloat16": "bf16"}.get(str(config.DTYPE), str(config.DTYPE))
+    return {"step": config.STEP, "optimization": config.OPTIMIZATION, "precision": precision}
+    
 def _append_csv(path, fields, rows):
     path.parent.mkdir(parents = True, exist_ok = True)
     new_file = not path.exists() #indicates if we need to make a new file 
