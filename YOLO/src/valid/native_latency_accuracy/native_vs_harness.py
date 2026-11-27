@@ -30,6 +30,9 @@ for i in range(args.iterations):
         stage = line.split()
         if stage and stage[0] in native_times: #line starts with a stage name
             native_times[stage[0]].append(float(stage[-1])) #last entry on line should be time
+    if native_result.returncode != 0 or len(native_times["inference"]) != i + 1: #stop at the first run that fails or prints no times
+        print(native_result.stdout[-3000:]); print(native_result.stderr[-3000:]) #end of that run's output, where the error is
+        sys.exit(f"ERROR: yoloNATIVE.py RUN {i + 1} FAILED OR DIDN'T PRINT TIMES (return code {native_result.returncode})")
 
 
 #CAPTURE HARNESS TIMING
@@ -43,20 +46,15 @@ for i in range(args.iterations):
     print(f"harness run {i + 1} of {args.iterations}")
     harness_result = subprocess.run([sys.executable, "unified_compiled/main.py", "--setting", "profile", "--step", str(args.step)],
                             cwd = SRC_DIR, capture_output = True, text = True) #run from YOLO/src, text = True gives strings instead of bytes
-    #harness prints lines like "  pre_processing   TOTAL WALL TIME   1.46"
-for line in harness_result.stdout.splitlines():
-    stage = line.split()
-    if stage and stage[0] in harness_names and "TOTAL" in line: #only the PASS 1 total lines
-        harness_times[harness_names[stage[0]]].append(float(line.split("(")[1].split()[0]) if "(" in line else float(stage[-1])) #per image time (inside the parentheses), ultralytics' speeds are per image too
+    #harness prints lines like "  pre_processing   TOTAL WALL TIME   2.92   (1.46 ms per image)"
+    for line in harness_result.stdout.splitlines():
+        stage = line.split()
+        if stage and stage[0] in harness_names and "TOTAL" in line: #only the PASS 1 total lines
+            harness_times[harness_names[stage[0]]].append(float(line.split("(")[1].split()[0]) if "(" in line else float(stage[-1])) #per image time (inside the parentheses), ultralytics' speeds are per image too
+    if harness_result.returncode != 0 or len(harness_times["inference"]) != i + 1: #stop at the first run that fails or prints no times
+        print(harness_result.stdout[-3000:]); print(harness_result.stderr[-3000:]) #end of that run's output, where the error is
+        sys.exit(f"ERROR: unified_compiled/main.py RUN {i + 1} FAILED OR DIDN'T PRINT TIMES (return code {harness_result.returncode})")
 
-#ERROR HANDLING OF SUBPROCESSES
-
-if len(native_times["inference"]) != args.iterations:
-    print(native_result.stderr)
-    sys.exit("ERROR: yoloNATIVE.py DIDN'T PRINT TIMES")
-if harness_result.returncode != 0 or len(harness_times["inference"]) != i + 1: #stop at the first run that fails or prints no times
-    print(harness_result.stdout[-3000:]); print(harness_result.stderr[-3000:]) #end of that run's output, where the error is
-    sys.exit(f"ERROR: unified_compiled/main.py RUN {i + 1} FAILED OR DIDN'T PRINT TIMES (return code {harness_result.returncode})")
 #capture average mean difference in each stage for optional validation check (NOTE: no stage +/-5% diff)
 native_med = {
             "preprocess": 0,
