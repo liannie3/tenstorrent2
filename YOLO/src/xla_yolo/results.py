@@ -27,7 +27,7 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
     rows = [] #holds information to be stored later in store_results
     timestamp = datetime.now().isoformat(timespec = "seconds")
     info = _run_info() #step, optimization and precision added to the end of every row
-    print(f"per-image timings (ms), {num_images} images, batch={batch_size}, step={info['step']}, opt={info['optimization']}, precision={info['precision']}, device={device}")
+    print(f"timings (ms per batch, per image in parentheses), {num_images} images, batch={batch_size}, step={info['step']}, opt={info['optimization']}, precision={info['precision']}, device={device}")
     for stage in config.STAGES: #for each stage
         total_time = 0.0
         for substep, vals in timings[stage].items(): #loop through each stage's dictionary
@@ -35,16 +35,16 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
             total_time += per_img #track total time for stage
             rows.append( {"timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
                                           "stage" : stage, "substep" : substep, "ms" : per_img, **info } )
-            print(f"  {stage:<16} {substep:<20} {per_img:8.2f}")
+            print(f"  {stage:<16} {substep:<20} {per_img * batch_size:8.2f}   ({per_img:.2f} ms per image)")
         if config.SUBSTEP_TIMING: #if substeps are timed
             rows.append( { "timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
                                             "stage" : stage, "substep" : "SUM_OF_STEPS", "ms" : total_time, **info } )
-            print(f"  {stage:<16} {'SUM OF STEPS':<20} {total_time:8.2f}")
+            print(f"  {stage:<16} {'SUM OF STEPS':<20} {total_time * batch_size:8.2f}   ({total_time:.2f} ms per image)")
         else: #if only wall times are timed
             wall = np.median(stage_wall_timings[stage]) / batch_size #stage is timed per batch, divided so every row is per image like the substeps
             rows.append( { "timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : pass_name, "device" : device, "batch_size" : batch_size, "num_images" : num_images, 
                                            "stage" : stage, "substep" : "TOTAL_WALL_TIME", "ms" : wall, **info } )
-            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {wall:8.2f}")
+            print(f"  {stage:<16} {'TOTAL WALL TIME':<20} {wall * batch_size:8.2f}   ({wall:.2f} ms per image)")
     return rows
     
 #end to end pass: no added syncs, total time of the whole run plus per batch spread
@@ -57,8 +57,8 @@ def display_e2e_results(batch_times, num_images, batch_size, device, start, end)
     p95_per_batch = np.percentile(batch_times, 95)
     print(f"end to end timings (ms per BATCH), {num_batches} batches of {batch_size}, step={info['step']}, opt={info['optimization']}, precision={info['precision']}, device={device}")
     print(f"  {'TOTAL / BATCHES':<20} {total_per_batch:8.2f}   ({total_per_batch / batch_size:.2f} ms per image)")
-    print(f"  {'BATCH MEDIAN':<20} {median_per_batch:8.2f}")
-    print(f"  {'BATCH P95':<20} {p95_per_batch:8.2f}")
+    print(f"  {'BATCH MEDIAN':<20} {median_per_batch:8.2f}   ({median_per_batch / batch_size:.2f} ms per image)")
+    print(f"  {'BATCH P95':<20} {p95_per_batch:8.2f}   ({p95_per_batch / batch_size:.2f} ms per image)")
     rows = []
     for substep, ms in (("TOTAL_PER_BATCH", total_per_batch), ("BATCH_MEDIAN", median_per_batch), ("BATCH_P95", p95_per_batch)):
         rows.append( {"timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : "e2e", "device" : device, "batch_size" : batch_size,
