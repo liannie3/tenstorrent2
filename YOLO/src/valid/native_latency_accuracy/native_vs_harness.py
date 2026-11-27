@@ -44,10 +44,10 @@ for i in range(args.iterations):
     harness_result = subprocess.run([sys.executable, "unified_compiled/main.py", "--setting", "profile", "--step", str(args.step)],
                             cwd = SRC_DIR, capture_output = True, text = True) #run from YOLO/src, text = True gives strings instead of bytes
     #harness prints lines like "  pre_processing   TOTAL WALL TIME   1.46"
-    for line in harness_result.stdout.splitlines():
-        stage = line.split()
-        if stage and stage[0] in harness_names and "TOTAL" in line: #only the PASS 1 total lines
-            harness_times[harness_names[stage[0]]].append(float(stage[-1])) #last entry on line should be time
+for line in harness_result.stdout.splitlines():
+    stage = line.split()
+    if stage and stage[0] in harness_names and "TOTAL" in line: #only the PASS 1 total lines
+        harness_times[harness_names[stage[0]]].append(float(line.split("(")[1].split()[0]) if "(" in line else float(stage[-1])) #per image time (inside the parentheses), ultralytics' speeds are per image too
 
 #ERROR HANDLING OF SUBPROCESSES
 
