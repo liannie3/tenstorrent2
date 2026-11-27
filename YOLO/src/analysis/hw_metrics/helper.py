@@ -42,3 +42,8 @@ def report(title, start, end, readings):
         print(f"  {k:<16} {sum(v) / len(v):>7.1f} {max(v):>7.1f}")
     if loads:
         print(f"  {'GPU LOAD (%)':<16} {sum(loads) / len(loads):>7.0f} {max(loads):>7}")
+
+#returns true when a log's row batch_size, step, and optimization equal the current options given
+def wanted(batch_size, step, optimization, args):
+     return ((args.batch_size is None or batch_size is None or batch_size == args.batch_size) and (args.step is None or step == args.step)
+            and (args.optimization is None or optimization == args.optimization))

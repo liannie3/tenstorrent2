@@ -89,5 +89,7 @@ if __name__ == "__main__":
     else:
         config.DTYPE = torch.bfloat16
     config.PROFILE = args.profiled
+    config.STEP = args.step
+    config.OPTIMIZATION = args.optimization
     print(f"   RUN USING OPTIMIZATION LEVEL OF torch.compile backend: {args.optimization}") 
     main(args.setting, config.IMG_DIR, args.batch_size, args.step)

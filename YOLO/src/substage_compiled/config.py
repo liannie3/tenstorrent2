@@ -8,6 +8,7 @@ import torch
 
 BENCH_DIR = Path(__file__).parent.parent.parent / "benchmarking"
 IMG_DIR = Path(__file__).parent.parent.parent / "input_images" / "CAM_FRONT"
+STEP = 1 #every nth image of the database, set by main.py --step (stored with hardware rows)
 
 CSV_PATH = BENCH_DIR / "stage_timings.csv" #computes path relative from the file to the folder containing it twice then to csv path 
 HARDWARE_PATH = BENCH_DIR / "hw_metrics.csv"
@@ -48,6 +49,7 @@ COMPILE_WARMUP = 2 #indicates the need for warming up on the first and second ca
                    #1st is the compilation of all graphs, 2nd is the recompilation of detect's head
                    #TODO: see if TT wants to compare compilation times between TT and CUDA
 COMPILE_BACKEND = "inductor" #torch.compile backend: "inductor" = fused Triton kernels (default), "aot_eager" = graph captured, one stock kernel per op (no fusion)
+OPTIMIZATION = "inductor" #torch.compile backend, set by main.py --optimization (stored with hardware rows)
 
 #boundary layer indicies from ultralytics/cfg/models/v8/yolov8.yaml
 BACKBONE_BOUNDARY = 9 #indicates backbone layers are 0-9 
