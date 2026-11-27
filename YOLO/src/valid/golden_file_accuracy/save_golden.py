@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 
 #PATH LOGIC
-HARNESS_DIR = Path(__file__).parent.parent.parent / "substages_compiled" #NOTE: harness that produces the detections, must match the folder name
+HARNESS_DIR = Path(__file__).parent.parent.parent / "substage_compiled" #NOTE: harness that produces the detections, must match the folder name
 sys.path.insert(0, str(HARNESS_DIR)) #lets this file import main.py and config.py from the harness folder
 os.chdir(HARNESS_DIR) #run from the harness folder so relative paths like the yolov8n.pt weights still work
 
