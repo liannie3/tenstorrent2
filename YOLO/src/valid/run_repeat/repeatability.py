@@ -65,7 +65,7 @@ for i in range(args.iterations):
 #NOTE: recall validation requirement for test is:
 #      Standard deviation of end-to-end latency of any run through each subsystem should be within 5% (or args.accuracy) of the mean latency.
 #DISPLAY RESULTS
-print(f"\n  {'NAME':<34} {'mean':>9} {'std dev':>9} {'min':>9} {'max':>9} {'std/mean':>9}")
+print(f"\n  {'NAME':<34} {'mean[ms]':>9} {'std dev[min]':>9} {'min[ms]':>9} {'max[ms]':>9} {'std/mean'[%]:>9}")
 failed = [] #stores runs that failed validation criteria
 for key, values in times.items(): #loop through iterations stored times
     mean = statistics.mean(values)
@@ -77,6 +77,6 @@ for key, values in times.items(): #loop through iterations stored times
 
 #VALIDATE RESULTS
 if failed:
-    print(f"    ===Run repeatability validation check FAILED!\n    ===Expected standard deviation within {args.accuracy}% of the mean across {args.iterations} runs,\n    failed: {', '.join(failed)}")
+    print(f"\n    ===Run repeatability validation check FAILED!\n    ===Expected standard deviation within {args.accuracy}% of the mean across {args.iterations} runs,\n    failed: {', '.join(failed)}")
 else:
-    print(f"    ===Run repeatability validation check PASSED!\n    ===Standard deviation within {args.accuracy}% of the mean for every number across {args.iterations} runs")
+    print(f"\n    ===Run repeatability validation check PASSED!\n    ===Standard deviation within {args.accuracy}% of the mean for every latency across {args.iterations} runs")
