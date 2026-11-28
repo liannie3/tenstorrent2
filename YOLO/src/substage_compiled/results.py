@@ -48,18 +48,19 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
 #end to end pass: no added syncs, total time of the whole run plus per batch spread
 def display_e2e_results(batch_times, num_images, batch_size, device, start, end):
     timestamp = datetime.now().isoformat(timespec = "seconds")
+    info = _run_info() #step, optimization and precision added to the end of every row
     num_batches = len(batch_times)
     total_per_batch = (end - start) * 1000 / num_batches   #whole run / batches, includes the one sync at the end
     median_per_batch = np.median(batch_times)
     p95_per_batch = np.percentile(batch_times, 95)
-    print(f"end to end timings (ms per BATCH), {num_batches} batches of {batch_size}, device={device}")
+    print(f"end to end timings (ms per BATCH), {num_batches} batches of {batch_size}, step={info['step']}, opt={info['optimization']}, precision={info['precision']}, device={device}")
     print(f"  {'TOTAL / BATCHES':<20} {total_per_batch:8.2f}   ({total_per_batch / batch_size:.2f} ms per image)")
     print(f"  {'BATCH MEDIAN':<20} {median_per_batch:8.2f}   ({median_per_batch / batch_size:.2f} ms per image)")
     print(f"  {'BATCH P95':<20} {p95_per_batch:8.2f}   ({p95_per_batch / batch_size:.2f} ms per image)")
     rows = []
-    for step, ms in (("TOTAL_PER_BATCH", total_per_batch), ("BATCH_MEDIAN", median_per_batch), ("BATCH_P95", p95_per_batch)):
+    for substep, ms in (("TOTAL_PER_BATCH", total_per_batch), ("BATCH_MEDIAN", median_per_batch), ("BATCH_P95", p95_per_batch)):
         rows.append( {"timestamp": timestamp, "script" : "stage_by_stage_compiled", "pass" : "e2e", "device" : device, "batch_size" : batch_size,
-                      "num_images" : num_images, "stage" : "end_to_end", "step" : step, "ms" : ms} )
+                      "num_images" : num_images, "stage" : "end_to_end", "substep" : substep, "ms" : ms, **info} )
     return rows
 
 def store_results(rows):
