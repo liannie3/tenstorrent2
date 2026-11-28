@@ -1,5 +1,6 @@
 import sys
 import csv #open and read csvs
+import time #timestamp for stage_share.csv
 import argparse #cli args
 
 import subprocess #runs the harness and nsys for you
@@ -10,8 +11,8 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS
 
 #finds the average percentage of each batch spent in every stage and substage of an ASYNC (no forced syncs) e2e run,
 #from nsys + the harness' NVTX ranges, then multiplies it by the unprofiled e2e batch time to estimate each substage's time
-#USAGE: python3 stage_share.py <batch size> [any other main.py flags, e.g. --step 16 --optimization inductor]
-#       python3 stage_share.py <batch size> --reuse   (skip the runs, re-read the last saved profile for this batch size)
+#USAGE: python3 main.py --batch_size 16 --step 4
+#       python3 main.py --batch_size 16 --step 4 --reuse   (skip the runs, re-read the last saved profile for this batch size)
 
 #does:  1. runs main.py --setting e2e with no profiler            -> unprofiled ms per batch (from stage_timings.csv)
 #       2. runs main.py --setting e2e --profiled under nsys       -> NVTX ranges + the GPU work launched inside each one
@@ -22,6 +23,7 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS
 #          host ms leaves out the OVERLAP: host time while GPU work launched by earlier substeps was still running. That
 #          time is already counted in the earlier substep's GPU ms, whether the CPU was waiting on it (NMS blocking until
 #          inference finishes) or working behind it (launching neck kernels while backbone runs)
+#       5. saves the results table to benchmarking/stage_share.csv (one row per substep + one STAGE_TOTAL row per stage)
 
 
 #NOTE: reason for inaccuracy compared to cuda events async latency timing (pass 2)
@@ -31,7 +33,7 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS
 #      the profiled percentages are multiplied by ONE unprofiled e2e total, which assumes every substep was slowed down equally
 #      so substeps with many API calls get a larger share than reality (higher than expected latency)
 #      and substeps with few API calls get a smaller share than reality (lower than expected latency)
-#      
+#
 #      explains why we see inference substages measure lower latency than gpu event latency implies, and nms substage incurss greater latency than events imply
 #      e.g. measured on the jetson at batch 16: postprocess +49%, inference -15%, preprocess -10% vs cuda events
 
@@ -41,9 +43,9 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS
 #CLI ARGS
 parser = argparse.ArgumentParser(formatter_class = lambda prog: argparse.HelpFormatter(prog, max_help_position = 60)) #keeps help text on the same line as each flag
 #NOTE: should be unncessary, only e2e runs
-#parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"], default = "latency", help = "determines what setting harness runs under (defaulted to e2e)") 
+#parser.add_argument("--setting", choices = ["latency", "hardware", "holistic", "profile", "e2e"], default = "latency", help = "determines what setting harness runs under (defaulted to e2e)")
 #NOTE: should be unnecessary, only bf16 runs for now
-#parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT 
+#parser.add_argument("--precision", choices = ["bf16", "fp32"], default = "bf16", help = "determines model data percision (defaulted to bf16)") #model data precision, optional, bf16 default to best match TT
 #NOTE: should be unnecessary, only inductor runs for now
 #parser.add_argument("--optimization", choices = ["inductor", "aot_eager", "eager"], default = "inductor", help = "determines torch.compile backend, aot_eager = no fusion / no Triton optimization (defaulted to inductor)") #set level of compile time optimization via compilation backend tuning
 parser.add_argument("--batch_size", type = int, choices = [1, 2, 4, 8, 16, 32, 64] , default = 1, help = "determines throughput of images sent through the model per batch (defaulted to 1)")
@@ -71,7 +73,7 @@ if not args.reuse:
     #3. export host ranges and their GPU projection to csv
     host_csv.unlink(missing_ok = True) #remove old exports so nsys stats doesn't stop to ask about them
     gpu_csv.unlink(missing_ok = True) #remove old exports so nsys stats doesn't stop to ask about them
-    
+
     Path(f"{profile}.sqlite").unlink(missing_ok = True)     #nsys stats converts the profile to sqlite first and won't overwrite an old one
     run("STEP 3: exporting NVTX ranges", ["nsys", "stats", "--force-export=true", "--report", "nvtx_pushpop_trace",
                                           "--report", "nvtx_gpu_proj_trace", "--format", "csv", "--output", str(profile),
@@ -79,7 +81,7 @@ if not args.reuse:
 
 elif not (host_csv.exists() and gpu_csv.exists()): #no previous work to recalculate off of
     sys.exit(f"ERROR: --reuse flag BUT NO SAVED EXPORTS FOR BATCH {batch_size} ({host_csv.name}, {gpu_csv.name})")
-e2e_ms, e2e_step = latest_e2e_ms(BENCH_DIR / "stage_timings.csv", batch_size, E2E_STEPS)
+e2e_ms, e2e_step = latest_e2e_ms(BENCH_DIR / "stage_timings.csv", batch_size, E2E_STEPS, str(args.step))
 
 #read host ranges: (name, start, end) in ns
 ranges = []
@@ -151,6 +153,7 @@ for batch in batches:
 n = len(batches)
 bs = int(batch_size)
 stage_ms = {} #stage -> est. ms per image
+rows = [] #rows for stage_share.csv, same numbers as the table printed below
 print(f"\n    RESULTS: batch {batch_size}, {n} batches, unprofiled e2e {e2e_ms:.3f} ms per batch ({e2e_step})    ")
 print(f"  {'STAGE':<16} {'SUBSTEP':<22} {'host ms':>8} {'overlap':>8} {'GPU ms':>8} {'avg %':>7} {'est. ms/img':>12}")
 for st in STAGES:
@@ -160,8 +163,12 @@ for st in STAGES:
         stage_pct += pct
         print(f"  {st:<16} {key[1]:<22} {avg(host[key]):>8.3f} {avg(overlaps[key]):>8.3f} {avg(gpu_t[key]):>8.3f} {pct:>7.2f} "
               f"{pct / 100 * e2e_ms / bs:>12.3f}")
+        rows.append({"stage" : st, "substep" : key[1], "host_ms" : avg(host[key]), "overlap_ms" : avg(overlaps[key]),
+                     "gpu_ms" : avg(gpu_t[key]), "avg_pct" : pct, "ms_per_image" : pct / 100 * e2e_ms / bs})
     stage_ms[st] = stage_pct / 100 * e2e_ms / bs #store this stage's est. ms per image
     print(f"  {st:<16} {'STAGE TOTAL':<22} {'':>8} {'':>8} {'':>8} {stage_pct:>7.2f} {stage_ms[st]:>12.3f}")
+    rows.append({"stage" : st, "substep" : "STAGE_TOTAL", "host_ms" : "", "overlap_ms" : "", "gpu_ms" : "",
+                 "avg_pct" : stage_pct, "ms_per_image" : stage_ms[st]})
 
 #per image and per batch totals of every stage
 print()
@@ -173,3 +180,22 @@ print(f"        est. ms/img = avg % x unprofiled e2e per batch / batch size")
 print(f"\n  SAVED: {profile}.nsys-rep  (open in Nsight Systems to see the timeline)")
 print(f"  SAVED: {host_csv}")
 print(f"  SAVED: {gpu_csv}")
+
+#save the results table to stage_share.csv
+#NOTE: optimization / precision are the harness defaults, since this script doesn't pass them (see the commented out args above)
+#NOTE: only saved on a fresh run, --reuse re-reads a profile that's already saved, so saving again would add the same run twice
+if args.reuse:
+    print(f"  NOT SAVED TO stage_share.csv (--reuse, this profile was saved when it was made)")
+else:
+    share_csv = BENCH_DIR / "stage_share.csv"
+    fields = ["timestamp", "batch_size", "step", "optimization", "precision", "batches", "e2e_ms_per_batch",
+              "stage", "substep", "host_ms", "overlap_ms", "gpu_ms", "avg_pct", "ms_per_image"]
+    new_file = not share_csv.exists()
+    with open(share_csv, "a", newline = "") as f:
+        writer = csv.DictWriter(f, fieldnames = fields)
+        if new_file:
+            writer.writeheader()
+        for row in rows:
+            writer.writerow({"timestamp" : time.strftime("%Y-%m-%d %H:%M:%S"), "batch_size" : batch_size, "step" : args.step,
+                             "optimization" : "inductor", "precision" : "bf16", "batches" : n, "e2e_ms_per_batch" : e2e_ms, **row})
+    print(f"  SAVED: {share_csv}")
