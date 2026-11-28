@@ -50,7 +50,7 @@ def display_results(stage_wall_timings, num_images, batch_size, device):
 #end to end pass: no added syncs, total time of the whole run plus per batch spread
 def display_e2e_results(batch_times, num_images, batch_size, device, start, end):
     timestamp = datetime.now().isoformat(timespec = "seconds")
-    info = _run_info() 
+    info = _run_info() #step, optimization and precision added to the end of every row
     num_batches = len(batch_times)
     total_per_batch = (end - start) * 1000 / num_batches   #whole run / batches, includes the one sync at the end
     median_per_batch = np.median(batch_times)
