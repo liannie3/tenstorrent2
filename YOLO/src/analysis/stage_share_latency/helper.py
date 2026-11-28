@@ -11,18 +11,19 @@ def run(title, cmd, cwd):
     if subprocess.run(cmd, cwd = cwd).returncode != 0:
         sys.exit(f"ERROR: {title} FAILED (see the output above)")
 
-#helper function that returns the latest unprofiled e2e ms per batch saved in stage_timings.csv for this batch size
-#NOTE: batch_size is a string, the csv stores everything as text
-def latest_e2e_ms(csv_path, batch_size, steps):
+#helper function that returns the latest unprofiled e2e ms per batch saved in stage_timings.csv for this batch size and step size
+#NOTE: batch_size and step are strings, the csv stores everything as text
+def latest_e2e_ms(csv_path, batch_size, steps, step):
     found = {}
     for row in csv.DictReader(open(csv_path)):
-        substep = row.get("substep", row.get("step")) #"substep" column (was "step" in older stage_timings.csv files)
-        if row.get("pass") == "e2e" and row.get("batch_size") == batch_size and substep in steps:
-            found[substep] = float(row["ms"]) #later rows replace earlier ones
-    for step in steps:
-        if step in found:
-            return found[step], step
-    sys.exit(f"ERROR: NO e2e {' / '.join(steps)} ROW FOR BATCH {batch_size} IN {csv_path}")
+        if "substep" not in row: #older stage_timings.csv rows, before the "step" column was renamed to "substep"
+            continue
+        if row.get("pass") == "e2e" and row.get("batch_size") == batch_size and row.get("step") == step and row.get("substep") in steps:
+            found[row["substep"]] = float(row["ms"]) #later rows replace earlier ones
+    for substep in steps:
+        if substep in found:
+            return found[substep], substep
+    sys.exit(f"ERROR: NO e2e {' / '.join(steps)} ROW FOR BATCH {batch_size} STEP {step} IN {csv_path}")
 
 #helper function that reads an nsys stats csv into a list of dicts
 #NOTE: nsys prints a few lines before the header in some versions, so the header is found by looking for "Name"

@@ -1,5 +1,6 @@
 import sys
 import csv
+import time #timestamp for stage_share.csv
 import argparse #cli args
 import subprocess
 from pathlib import Path #find paths relative to this script
@@ -18,6 +19,7 @@ from config import HARNESS_DIR, BENCH_DIR, STAGES, TIMED_LOOP, E2E_STEPS, TRACY_
 #       4. card timeline rebuilt on the HOST run's clock: every op the host run dispatched gets the device kernel duration of
 #          the same op in the device run (matched one to one, in order, op names checked)
 #       5. per batch: each substep costs max(host ms - overlap, card ms) (same rule as CUDA), its share = that / the batch's total
+#       6. saves the results table to benchmarking/stage_share.csv (one row per substep + one STAGE_TOTAL row per stage)
 
 #NOTE: why TT needs two profiled runs (CUDA's nsys needs one)
 #      with the card profiler on, tt-mlir's runtime reads the profiler data back after EVERY graph it runs
@@ -70,7 +72,7 @@ if not args.reuse:
     #3. device run: card profiler on, only its device kernel durations are used
     run("STEP 3: profiled e2e run under tracy, with the card profiler", [sys.executable, "-m", "tracy"] + TRACY_FLAGS
                                                  + ["-o", str(device_dir)] + harness_args + ["--profiled"], HARNESS_DIR)
-e2e_ms, e2e_step = latest_e2e_ms(BENCH_DIR / "stage_timings.csv", batch_size, E2E_STEPS)
+e2e_ms, e2e_step = latest_e2e_ms(BENCH_DIR / "stage_timings.csv", batch_size, E2E_STEPS, str(args.step))
 ops_csv = latest_ops_csv(device_dir)
 
 #host run: signposts + card op dispatches, from tracy's host log (";" separated, messages wrapped in backticks)
@@ -131,6 +133,7 @@ for batch in batches:
 #prints the average % of every substep (grouped by stage), times the unprofiled e2e time
 bs = int(batch_size)
 stage_ms = {} #stage -> est. ms per image
+rows = [] #rows for stage_share.csv, same numbers as the table printed below
 print(f"\n    RESULTS: batch {batch_size}, {len(batches)} batches, {len(host_ops)} card ops matched, "
       f"unprofiled e2e {e2e_ms:.3f} ms per batch ({e2e_step})    ")
 print(f"  {'STAGE':<16} {'SUBSTEP':<22} {'host ms':>8} {'overlap':>8} {'card ms':>8} {'avg %':>7} {'est. ms/img':>12}")
@@ -141,8 +144,12 @@ for st in STAGES:
         stage_pct += pct
         print(f"  {st:<16} {key[1]:<22} {avg(host[key]):>8.3f} {avg(overlaps[key]):>8.3f} {avg(card_t[key]):>8.3f} {pct:>7.2f} "
               f"{pct / 100 * e2e_ms / bs:>12.3f}")
+        rows.append({"stage" : st, "substep" : key[1], "host_ms" : avg(host[key]), "overlap_ms" : avg(overlaps[key]),
+                     "card_ms" : avg(card_t[key]), "avg_pct" : pct, "ms_per_image" : pct / 100 * e2e_ms / bs})
     stage_ms[st] = stage_pct / 100 * e2e_ms / bs #store this stage's est. ms per image
     print(f"  {st:<16} {'STAGE TOTAL':<22} {'':>8} {'':>8} {'':>8} {stage_pct:>7.2f} {stage_ms[st]:>12.3f}")
+    rows.append({"stage" : st, "substep" : "STAGE_TOTAL", "host_ms" : "", "overlap_ms" : "", "card_ms" : "",
+                 "avg_pct" : stage_pct, "ms_per_image" : stage_ms[st]})
 
 #per image and per batch totals of every stage
 print()
@@ -154,3 +161,23 @@ print(f"        cost = max(host ms - overlap, card ms) (same as CUDA), est. ms/i
 print(f"  CHECK: host run substeps {avg([sum(v[0] for v in b.values()) for b in batches]):.3f} ms per batch vs unprofiled e2e {e2e_ms:.3f}"
       f"   card ops with no device duration: {missing_device}")
 print(f"\n  SAVED: {host_log}\n         {ops_csv}")
+
+#save the results table to stage_share.csv
+#NOTE: precision is always bf16 on TT
+#NOTE: only saved on a fresh run, --reuse re-reads profiles that are already saved, so saving again would add the same run twice
+if args.reuse:
+    print(f"  NOT SAVED TO stage_share.csv (--reuse, these profiles were saved when they were made)")
+else:
+    share_csv = BENCH_DIR / "stage_share.csv"
+    fields = ["timestamp", "batch_size", "step", "optimization", "precision", "batches", "e2e_ms_per_batch",
+              "stage", "substep", "host_ms", "overlap_ms", "card_ms", "avg_pct", "ms_per_image"]
+    new_file = not share_csv.exists()
+    with open(share_csv, "a", newline = "") as f:
+        writer = csv.DictWriter(f, fieldnames = fields)
+        if new_file:
+            writer.writeheader()
+        for row in rows:
+            writer.writerow({"timestamp" : time.strftime("%Y-%m-%d %H:%M:%S"), "batch_size" : batch_size, "step" : args.step,
+                             "optimization" : args.optimization, "precision" : "bf16", "batches" : len(batches),
+                             "e2e_ms_per_batch" : e2e_ms, **row})
+    print(f"  SAVED: {share_csv}")
